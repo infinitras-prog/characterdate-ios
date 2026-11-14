@@ -24,7 +24,13 @@ struct AnrufAnsicht: View {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text(statusText).font(.headline.monospacedDigit()).foregroundStyle(Farbe.text2)
                 }
-                if let i = telefon.grund ?? telefon.info {
+                if let g = telefon.grund {
+                    VStack(spacing: 14) {
+                        Text(g).font(.callout).foregroundStyle(.white).multilineTextAlignment(.center)
+                        Button("Schließen") { schliessen() }.buttonStyle(HauptKnopf())
+                    }
+                    .padding(18).glas().padding(.horizontal, 24)
+                } else if let i = telefon.info {
                     Text(i).font(.footnote).foregroundStyle(Farbe.text3).multilineTextAlignment(.center).padding(.horizontal, 30)
                 }
                 Spacer()
@@ -45,7 +51,9 @@ struct AnrufAnsicht: View {
         .onChange(of: telefon.zustand) { _, z in
             if z == .beendet {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                DispatchQueue.main.asyncAfter(deadline: .now() + (telefon.grund == nil ? 1.2 : 3)) { schliessen() }
+                if telefon.grund == nil {        // normal aufgelegt: kurz »Anruf beendet«, dann zu
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { schliessen() }
+                }                                // mit Grund (Problem): bleibt stehen, bis du »Schließen« tippst
             } else if z == .aktiv {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             }
