@@ -103,11 +103,13 @@ final class Verbindung {
         }
         basis = gefunden ?? alteBasis
         guard gefunden != nil else {
-            zustand = .offline("Dein PC ist gerade nicht erreichbar. Läuft CharacterDate mit eingeschaltetem Fernzugriff?")
+            zustand = .offline("PC nicht erreichbar – du siehst die zuletzt geladenen Chats. Läuft CharacterDate am PC?")
+            if charaktere.isEmpty, let alt = Ablage.lesen([Charakter].self, "charaktere") { charaktere = alt }
             return
         }
         do {
             charaktere = try await anfrage("/api/charaktere")
+            Ablage.schreiben(charaktere, "charaktere")
             zustand = .verbunden
             ereignisseStarten()
         } catch {
@@ -118,7 +120,7 @@ final class Verbindung {
 
     @MainActor
     func neuLaden() async {
-        if let c: [Charakter] = try? await anfrage("/api/charaktere") { charaktere = c }
+        if let c: [Charakter] = try? await anfrage("/api/charaktere") { charaktere = c; Ablage.schreiben(c, "charaktere") }
     }
 
     // MARK: Anfragen
@@ -179,9 +181,15 @@ final class Verbindung {
     func medien(_ rel: String) async throws -> Data {
         let pfad = rel.hasPrefix("/api/") ? rel : "/api/medien/" + rel
         if let d = MedienCache.shared.object(forKey: pfad as NSString) { return d as Data }
-        let d = try await roh(pfad, zeit: 60)
-        MedienCache.shared.setObject(d as NSData, forKey: pfad as NSString, cost: d.count)
-        return d
+        do {
+            let d = try await roh(pfad, zeit: 60)
+            MedienCache.shared.setObject(d as NSData, forKey: pfad as NSString, cost: d.count)
+            Ablage.medienSchreiben(pfad, d)
+            return d
+        } catch {
+            if let d = Ablage.medienLesen(pfad) { return d }      // offline: aus der Ablage
+            throw error
+        }
     }
 
     // MARK: Ereignisse

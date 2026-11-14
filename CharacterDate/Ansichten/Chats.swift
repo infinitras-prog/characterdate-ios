@@ -488,7 +488,13 @@ struct ChatAnsicht: View {
             nachrichten = r.nachrichten
             gelesenBis = r.gelesenBis ?? 0
             tippt = c?.tippt ?? false
-        } catch { fehler = error.localizedDescription }
+            Ablage.schreiben(r, "chat_" + charId)
+        } catch {
+            if let alt = Ablage.lesen(ChatAntwort.self, "chat_" + charId) {
+                nachrichten = alt.nachrichten; gelesenBis = alt.gelesenBis ?? 0
+                fehler = "Offline – zuletzt geladener Stand. Neue Nachrichten gehen, sobald der PC erreichbar ist."
+            } else { fehler = error.localizedDescription }
+        }
     }
 
     @MainActor

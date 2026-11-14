@@ -12,6 +12,7 @@ struct AnrufAnsicht: View {
     @State private var portraet: UIImage?
     @State private var bildKennung = "avatar"
     @State private var augen = Augen()
+    @State private var clips = ClipSpieler()
     @State private var tippen = false
     @State private var getippt = ""
     @FocusState private var tippFokus: Bool
@@ -21,7 +22,11 @@ struct AnrufAnsicht: View {
     var body: some View {
         ZStack {
             Farbe.grund.ignoresSafeArea()
-            if video, let portraet {
+            if video, clips.bereit {
+                ClipAnsicht(spieler: clips.spieler).ignoresSafeArea().transition(.opacity)
+                LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            } else if video, let portraet {
                 // Videoanruf: ihr Profilbild lebt (Mund nach Stimme, Blinzeln, Kopfbewegung)
                 LebendigesPortraet(bild: portraet, pegel: { telefon.pegelSie }, aktiv: telefon.zustand == .aktiv)
                     .id(bildKennung)                       // neues Szenenbild → Animation neu aufbauen
@@ -89,6 +94,13 @@ struct AnrufAnsicht: View {
         .statusBarHidden(telefon.zustand == .aktiv)
         .task {
             guard video else { return }
+            // Echte Bewegungen: Clips zur Szene (falls schon gedreht) – sonst lebendes Standbild
+            struct ClipListe: Decodable { let clips: [String: String] }
+            if let l: ClipListe = try? await v.anfrage("/api/charaktere/\(c.id)/anrufclips?format=hoch"), l.clips["ruhe"] != nil {
+                clips.sieRedet = { [t = telefon] in t.pegelSie > 0.05 }
+                clips.duRedest = { [t = telefon] in t.pegelDu > 0.05 }
+                await clips.laden(v, clips: l.clips)
+            }
             // Szenenbild 9:16: dort, wo sie laut Chat gerade ist – sonst erst das Profilbild
             struct Szene: Decodable { let url: String?; let ort: String? }
             if let s: Szene = try? await v.anfrage("/api/charaktere/\(c.id)/videoszene?format=hoch&nur_lesen=1", methode: "POST"),
@@ -105,7 +117,12 @@ struct AnrufAnsicht: View {
                 }
             }
         }
-        .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten() }
+        .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten(); clips.stoppen() }
+        .onChange(of: telefon.sieText) { _, t in
+            if t.range(of: #"ha(ha)+|hihi|lach"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                clips.lachenBis = Date().addingTimeInterval(2.5)
+            }
+        }
         .onAppear {
             telefon.starten(v, char: c, eingehend: eingehend)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
