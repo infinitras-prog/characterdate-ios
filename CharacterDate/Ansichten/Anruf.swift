@@ -11,6 +11,9 @@ struct AnrufAnsicht: View {
     @State private var portraet: UIImage?
     @State private var bildKennung = "avatar"
     @State private var augen = Augen()
+    @State private var tippen = false
+    @State private var getippt = ""
+    @FocusState private var tippFokus: Bool
     @State private var ort: String?
     @State private var abo: UUID?
 
@@ -77,6 +80,7 @@ struct AnrufAnsicht: View {
                 Spacer()
                 untertitel
                 if !video { Spacer() }
+                if tippen && telefon.zustand == .aktiv { tippZeile }
                 knoepfe.padding(.bottom, 30)
             }
             .foregroundStyle(.white)
@@ -166,8 +170,34 @@ struct AnrufAnsicht: View {
         .frame(minHeight: 110)
     }
 
+    private var tippZeile: some View {
+        HStack(spacing: 8) {
+            TextField("Nachricht – sie antwortet mit Stimme", text: $getippt)
+                .focused($tippFokus).submitLabel(.send)
+                .onSubmit { tippAbschicken() }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+            Button { tippAbschicken() } label: {
+                Image(systemName: "paperplane.fill").foregroundStyle(.white).frame(width: 40, height: 40)
+                    .background(Farbe.verlauf, in: Circle())
+            }
+            .disabled(getippt.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func tippAbschicken() {
+        let t = getippt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        telefon.textSenden(t); getippt = ""
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
     private var knoepfe: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 18) {
+            rund("keyboard", text: "Schreiben", an: tippen) {
+                tippen.toggle(); tippFokus = tippen
+            }
             rund(telefon.stumm ? "mic.slash.fill" : "mic.fill", text: telefon.stumm ? "Stumm" : "Mikro", an: telefon.stumm) {
                 telefon.stummSchalten()
             }

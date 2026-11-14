@@ -114,6 +114,8 @@ final class Telefon {
 
     /// Ihre Augen: Kamera an/aus melden und Standbilder schicken.
     func kameraMelden(_ an: Bool) { senden(["typ": "kamera", "an": an]) }
+    /// Getippt statt gesprochen – sie antwortet trotzdem mit Stimme.
+    func textSenden(_ t: String) { senden(["typ": "text", "text": t]) }
     func blickSenden(_ dataURL: String) { senden(["typ": "blick", "bild": dataURL]) }
 
     private func senden(_ d: [String: Any]) {

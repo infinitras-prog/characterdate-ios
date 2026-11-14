@@ -205,6 +205,11 @@ struct ChatAnsicht: View {
         .task {
             vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true
             await laden()
+            // Stimme + Gehör am PC schon laden – Anrufe heben dann sofort ab
+            if c?.hatStimme == true {
+                struct Ok: Decodable { let ok: Bool }
+                let _: Ok? = try? await v.anfrage("/api/stimme/vorwaermen", methode: "POST")
+            }
             // Videoanruf-Szene (9:16) passend zum Chat schon vorbereiten – dann startet der Videoanruf ohne Wartezeit
             if c?.hatStimme == true, c?.avatarUrl != nil {
                 struct Szene: Decodable { let url: String? }
