@@ -48,6 +48,8 @@ final class Telefon {
         zentrale = z
         z.anrufen(id: id, name: char.name) { [weak self] ok in
             guard let self, !ok else { return }
+            self.letzterFehler = "CallKit hat den Anruf abgelehnt – ohne CallKit weiter"
+            self.melden(self.letzterFehler!)
             // Ohne CallKit: Sitzung selbst einrichten
             self.sitzungEinrichten()
             try? AVAudioSession.sharedInstance().setActive(true)
@@ -79,9 +81,22 @@ final class Telefon {
     }
 
     /// Räumt alles ab (aus CallKit-Ende, Fehler oder Serverende).
+    /// Fehlersuche: warum ein Anruf endete, landet im Log des PCs.
+    @ObservationIgnored var letzterFehler: String?
+    func melden(_ text: String) {
+        guard let v = verbindung else { return }
+        struct P: Encodable { let quelle: String; let text: String }
+        struct A: Decodable { let ok: Bool }
+        Task { let _: A? = try? await v.anfrage("/api/protokoll", methode: "POST", body: P(quelle: "iPhone-Anruf", text: text)) }
+    }
+
     @MainActor
     func beenden(grund g: String? = nil) {
         if let g, grund == nil { grund = g }
+        if zustand != .beendet {
+            let dauer = start.map { Int(Date().timeIntervalSince($0)) } ?? 0
+            melden("Anruf endet: Zustand \(zustand), Grund \(g ?? "–"), nach \(dauer) s, letzter Fehler \(letzterFehler ?? "–")")
+        }
         if zustand != .beendet {
             senden(["typ": "auflegen"])
             zustand = .beendet
@@ -128,7 +143,8 @@ final class Telefon {
         s.receive { [weak self] ergebnis in
             guard let self, self.socket === s else { return }
             switch ergebnis {
-            case .failure:
+            case .failure(let f):
+                self.letzterFehler = "WebSocket: \(f.localizedDescription) (Code \(s.closeCode.rawValue))"
                 Task { @MainActor in if self.zustand != .beendet { self.beenden(grund: "Verbindung zum PC unterbrochen.") } }
             case .success(let n):
                 switch n {

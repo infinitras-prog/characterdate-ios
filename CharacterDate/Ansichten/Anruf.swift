@@ -90,7 +90,7 @@ struct AnrufAnsicht: View {
             guard video else { return }
             // Szenenbild 9:16: dort, wo sie laut Chat gerade ist – sonst erst das Profilbild
             struct Szene: Decodable { let url: String?; let ort: String? }
-            if let s: Szene = try? await v.anfrage("/api/charaktere/\(c.id)/videoszene?format=hoch", methode: "POST"),
+            if let s: Szene = try? await v.anfrage("/api/charaktere/\(c.id)/videoszene?format=hoch&nur_lesen=1", methode: "POST"),
                let u = s.url, let d = try? await v.medien(u), let b = UIImage(data: d) {
                 portraet = b; bildKennung = u; ort = s.ort
             } else if let a = c.avatarUrl, let d = try? await v.medien(a) { portraet = UIImage(data: d) }
