@@ -9,6 +9,10 @@ struct AnrufAnsicht: View {
     @State private var telefon = Telefon()
     @State private var puls = false
     @State private var portraet: UIImage?
+    @State private var bildKennung = "avatar"
+    @State private var augen = Augen()
+    @State private var ort: String?
+    @State private var abo: UUID?
 
     var body: some View {
         ZStack {
@@ -16,7 +20,14 @@ struct AnrufAnsicht: View {
             if video, let portraet {
                 // Videoanruf: ihr Profilbild lebt (Mund nach Stimme, Blinzeln, Kopfbewegung)
                 LebendigesPortraet(bild: portraet, pegel: { telefon.pegelSie }, aktiv: telefon.zustand == .aktiv)
+                    .id(bildKennung)                       // neues Szenenbild → Animation neu aufbauen
+                    .transition(.opacity)
                     .ignoresSafeArea()
+                if let ort {
+                    VStack { HStack { Label(ort, systemImage: "mappin.and.ellipse").font(.caption).padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule()); Spacer() }; Spacer() }
+                        .padding(.top, 60).padding(.leading, 16)
+                }
                 LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
             } else if let a = c.avatarUrl {
@@ -24,6 +35,28 @@ struct AnrufAnsicht: View {
             }
             LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
+
+            if augen.an {
+                VStack {
+                    HStack {
+                        Spacer()
+                        ZStack(alignment: .bottomLeading) {
+                            KameraVorschau(sitzung: augen.sitzung)
+                                .frame(width: 110, height: 160).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Label("sieht dich", systemImage: "eye.fill").font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6).padding(.vertical, 3).background(Farbe.mint.opacity(0.9), in: Capsule())
+                                .foregroundStyle(.black).padding(6)
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.3), lineWidth: 1))
+                        .shadow(radius: 10)
+                        .onTapGesture { augen.wechseln() }
+                        .accessibilityLabel("Kamera wechseln")
+                    }
+                    Spacer()
+                }
+                .padding(.top, 56).padding(.trailing, 16)
+                .transition(.scale.combined(with: .opacity))
+            }
 
             VStack(spacing: 18) {
                 Spacer(minLength: video ? 10 : 40)
@@ -50,8 +83,24 @@ struct AnrufAnsicht: View {
         }
         .statusBarHidden(telefon.zustand == .aktiv)
         .task {
-            if video, let a = c.avatarUrl, let d = try? await v.medien(a) { portraet = UIImage(data: d) }
+            guard video else { return }
+            // Szenenbild 9:16: dort, wo sie laut Chat gerade ist – sonst erst das Profilbild
+            struct Szene: Decodable { let url: String?; let ort: String? }
+            if let s: Szene = try? await v.anfrage("/api/charaktere/\(c.id)/videoszene?format=hoch", methode: "POST"),
+               let u = s.url, let d = try? await v.medien(u), let b = UIImage(data: d) {
+                portraet = b; bildKennung = u; ort = s.ort
+            } else if let a = c.avatarUrl, let d = try? await v.medien(a) { portraet = UIImage(data: d) }
+            abo = v.abonnieren { e in
+                guard e.typ == "videoszene", e.charId == c.id, (e.roh["format"] as? String) == "hoch",
+                      let u = e.roh["url"] as? String else { return }
+                Task { @MainActor in
+                    if let d = try? await v.medien(u), let b = UIImage(data: d) {
+                        withAnimation(.easeInOut(duration: 0.8)) { portraet = b; bildKennung = u; ort = e.roh["ort"] as? String }
+                    }
+                }
+            }
         }
+        .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten() }
         .onAppear {
             telefon.starten(v, char: c)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
@@ -118,9 +167,19 @@ struct AnrufAnsicht: View {
     }
 
     private var knoepfe: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 22) {
             rund(telefon.stumm ? "mic.slash.fill" : "mic.fill", text: telefon.stumm ? "Stumm" : "Mikro", an: telefon.stumm) {
                 telefon.stummSchalten()
+            }
+            rund(augen.an ? "eye.fill" : "eye.slash", text: augen.an ? (augen.hinten ? "Rückkamera" : "Frontkamera") : "Ihre Augen", an: augen.an) {
+                if augen.an {
+                    augen.ausschalten(); telefon.kameraMelden(false)
+                } else {
+                    Task {
+                        augen.bild = { [t = telefon] url in t.blickSenden(url) }
+                        if await augen.einschalten() { telefon.kameraMelden(true) }
+                    }
+                }
             }
             Button { telefon.auflegen() } label: {
                 Image(systemName: "phone.down.fill").font(.system(size: 30, weight: .semibold))

@@ -112,6 +112,10 @@ final class Telefon {
         empfangen(s)
     }
 
+    /// Ihre Augen: Kamera an/aus melden und Standbilder schicken.
+    func kameraMelden(_ an: Bool) { senden(["typ": "kamera", "an": an]) }
+    func blickSenden(_ dataURL: String) { senden(["typ": "blick", "bild": dataURL]) }
+
     private func senden(_ d: [String: Any]) {
         guard let s = socket, let daten = try? JSONSerialization.data(withJSONObject: d),
               let text = String(data: daten, encoding: .utf8) else { return }

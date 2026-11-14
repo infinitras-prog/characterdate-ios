@@ -202,7 +202,15 @@ struct ChatAnsicht: View {
         } message: {
             Text("Bis zu 30 Sekunden klare Sprache ohne Musik werden genutzt – je länger, desto genauer wird die Stimme kopiert.")
         }
-        .task { vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true; await laden() }
+        .task {
+            vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true
+            await laden()
+            // Videoanruf-Szene (9:16) passend zum Chat schon vorbereiten – dann startet der Videoanruf ohne Wartezeit
+            if c?.hatStimme == true, c?.avatarUrl != nil {
+                struct Szene: Decodable { let url: String? }
+                let _: Szene? = try? await v.anfrage("/api/charaktere/\(charId)/videoszene?format=hoch", methode: "POST")
+            }
+        }
         .onAppear {
             abo = v.abonnieren { e in
                 guard e.charId == charId else { if e.typ == "verbunden" { Task { await laden() } }; return }
