@@ -160,6 +160,9 @@ struct BildVollbild: View {
     @State private var aendernOffen = false
     @State private var anweisung = ""
     @State private var arbeitet = false
+    @State private var neuLaeuft = false
+    @State private var loeschenFrage = false
+    private var lager: Erstellungen { Erstellungen.shared }
 
     private struct NeuesBild: Decodable { let id: String; let url: String }
 
@@ -170,6 +173,12 @@ struct BildVollbild: View {
             if arbeitet {
                 VStack(spacing: 10) { ProgressView().tint(.white); Text("Foto wird geändert …").font(.footnote) }
                     .padding(18).glas()
+            }
+            if let bid = bildId, neuLaeuft, lager.kandidaten[bid] == nil {
+                ErstellungsKarte(nid: "neu-" + bid, titel: "Neue Version", symbol: "arrow.triangle.2.circlepath")
+            }
+            if let bid = bildId, let k = lager.kandidaten[bid] {
+                vergleich(bid, k)
             }
             VStack {
                 HStack {
@@ -183,7 +192,11 @@ struct BildVollbild: View {
                     Button { Task { await sichern() } } label: { Label("In Fotos sichern", systemImage: "square.and.arrow.down") }
                         .buttonStyle(HauptKnopf())
                     if bildId != nil {
-                        Button { aendernOffen = true } label: { Label("Ändern", systemImage: "wand.and.stars") }
+                        Menu {
+                            Button { aendernOffen = true } label: { Label("Ändern …", systemImage: "wand.and.stars") }
+                            Button { Task { await neuErzeugen() } } label: { Label("Neu erzeugen", systemImage: "arrow.triangle.2.circlepath") }
+                            Button(role: .destructive) { loeschenFrage = true } label: { Label("Löschen", systemImage: "trash") }
+                        } label: { Label("Mehr", systemImage: "ellipsis.circle") }
                             .buttonStyle(HauptKnopf(farbe: AnyShapeStyle(Color.white.opacity(0.18))))
                     }
                 }
@@ -192,6 +205,10 @@ struct BildVollbild: View {
             }
         }
         .onAppear { pfad = bild.pfad; bildId = bild.bildId }
+        .confirmationDialog("Foto löschen?", isPresented: $loeschenFrage, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) { Task { await loeschen() } }
+        } message: { Text("Das Foto verschwindet aus Galerie und Chat. Das lässt sich nicht rückgängig machen.") }
+        .onChange(of: bildId.flatMap { lager.kandidatFehler[$0] }) { _, f in if let f { meldung = f; neuLaeuft = false } }
         .alert("Was soll anders sein?", isPresented: $aendernOffen) {
             TextField("z. B. rote Haare, am Strand", text: $anweisung)
             Button("Ändern") { Task { await aendern() } }
@@ -199,6 +216,55 @@ struct BildVollbild: View {
         } message: {
             Text("Alles andere bleibt gleich. Das Original bleibt erhalten.")
         }
+    }
+
+    /// Alt und neu nebeneinander – erst »Übernehmen« ersetzt das alte Foto (Galerie + Chat).
+    private func vergleich(_ bid: String, _ k: (id: String, url: String)) -> some View {
+        VStack(spacing: 12) {
+            Text("Neue Version").font(.headline)
+            HStack(spacing: 10) {
+                VStack { NetzBild(pfad: pfad.isEmpty ? bild.pfad : pfad, modus: .fit).frame(height: 260); Text("Bisher").font(.caption) }
+                VStack { NetzBild(pfad: k.url, modus: .fit).frame(height: 260)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Farbe.rose, lineWidth: 2)); Text("Neu").font(.caption.bold()) }
+            }
+            HStack(spacing: 10) {
+                Button { Task { await ersetzen(bid, k.id) } } label: { Label("Übernehmen", systemImage: "checkmark") }
+                    .buttonStyle(HauptKnopf())
+                Button { Task { await verwerfen(bid, k.id) } } label: { Label("Verwerfen", systemImage: "xmark") }
+                    .buttonStyle(HauptKnopf(farbe: AnyShapeStyle(Color.white.opacity(0.18))))
+            }
+        }
+        .padding(16).glas().padding(14)
+    }
+
+    @MainActor private func neuErzeugen() async {
+        guard let bid = bildId else { return }
+        lager.kandidaten[bid] = nil; lager.kandidatFehler[bid] = nil
+        do { _ = try await v.roh("/api/bilder/\(bid)/neu", methode: "POST"); neuLaeuft = true; meldung = nil }
+        catch { meldung = error.localizedDescription }
+    }
+
+    @MainActor private func ersetzen(_ bid: String, _ kid: String) async {
+        struct K: Encodable { let kandidat: String }
+        do {
+            let neu: NeuesBild = try await v.anfrage("/api/bilder/\(bid)/ersetzen", methode: "POST", body: K(kandidat: kid))
+            MedienCache.shared.removeAllObjects()
+            pfad = neu.url + "?v=\(Int(Date().timeIntervalSince1970))"
+            lager.kandidaten[bid] = nil; neuLaeuft = false
+            meldung = "Altes Foto ersetzt."
+            geaendert?()
+        } catch { meldung = error.localizedDescription }
+    }
+
+    @MainActor private func verwerfen(_ bid: String, _ kid: String) async {
+        _ = try? await v.roh("/api/bilder/\(kid)", methode: "DELETE")
+        lager.kandidaten[bid] = nil; neuLaeuft = false
+    }
+
+    @MainActor private func loeschen() async {
+        guard let bid = bildId else { return }
+        do { _ = try await v.roh("/api/bilder/\(bid)", methode: "DELETE"); geaendert?(); schliessen() }
+        catch { meldung = error.localizedDescription }
     }
 
     @MainActor

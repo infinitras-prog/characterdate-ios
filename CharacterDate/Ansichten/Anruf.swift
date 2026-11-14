@@ -289,7 +289,7 @@ struct AnrufAnsicht: View {
             }
             .accessibilityLabel("Auflegen")
             .disabled(telefon.zustand == .beendet)
-            rund(telefon.lautsprecher ? "speaker.wave.3.fill" : "ear", text: telefon.lautsprecher ? "Lautsprecher" : "Hörmuschel", an: telefon.lautsprecher) {
+            rund(telefon.lautsprecher ? "speaker.wave.3.fill" : "speaker.fill", text: telefon.lautsprecher ? "Lautsprecher an" : "Lautsprecher", an: telefon.lautsprecher) {
                 telefon.lautsprecherSchalten()
             }
         }

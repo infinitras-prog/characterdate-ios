@@ -30,7 +30,8 @@ final class Telefon {
     private var socket: URLSessionWebSocketTask?
     private let engine = AVAudioEngine()
     private let stimme = AVAudioPlayerNode()
-    private let freizeichen = AVAudioPlayerNode()
+    /// Freizeichen über einen eigenen Player – nicht durch die Sprachverarbeitung (Echo-/Rauschfilter schluckten den Ton)
+    private var freizeichen: AVAudioPlayer?
     private var stimmFormat: AVAudioFormat?
     private var wandler: AVAudioConverter?
     private let zielFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
@@ -109,6 +110,7 @@ final class Telefon {
         let s = socket
         socket = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { s?.cancel(with: .normalClosure, reason: nil) }
+        freizeichenStoppen()
         audioStoppen()
         UIDevice.current.isProximityMonitoringEnabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -175,7 +177,7 @@ final class Telefon {
                 zustand = .klingelt
                 freizeichenStarten()
             case "aktiv":
-                freizeichen.stop()
+                freizeichenStoppen()
                 info = nil
                 zustand = .aktiv
                 start = Date()
@@ -216,12 +218,9 @@ final class Telefon {
         let ein = engine.inputNode
         try? ein.setVoiceProcessingEnabled(true)          // Echo-Unterdrückung + Rauschfilter
         engine.attach(stimme)
-        engine.attach(freizeichen)
         let sf = stimmFormat ?? AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
         stimmFormat = sf
         engine.connect(stimme, to: engine.mainMixerNode, format: sf)
-        let fz = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
-        engine.connect(freizeichen, to: engine.mainMixerNode, format: fz)
 
         let eingang = ein.outputFormat(forBus: 0)
         guard eingang.sampleRate > 0, eingang.channelCount > 0 else {
@@ -238,7 +237,7 @@ final class Telefon {
             try engine.start()
             stimme.play()
             audioLaeuft = true
-            if zustand != .aktiv { Task { @MainActor in self.freizeichenStarten() } }
+
         } catch {
             Task { @MainActor in self.beenden(grund: "Audio konnte nicht starten: \(error.localizedDescription)") }
         }
@@ -248,7 +247,7 @@ final class Telefon {
         guard audioLaeuft else { return }
         audioLaeuft = false
         engine.inputNode.removeTap(onBus: 0)
-        stimme.stop(); freizeichen.stop()
+        stimme.stop(); freizeichenStoppen()
         engine.stop()
     }
 
@@ -314,21 +313,33 @@ final class Telefon {
         if !stimme.isPlaying { stimme.play() }
     }
 
-    /// Deutsches Freizeichen: 425 Hz, 1 s Ton, 4 s Pause – solange es klingelt.
+    /// Deutsches Freizeichen: 425 Hz, 1 s Ton, 4 s Pause – solange gewählt wird / es klingelt.
     @MainActor
     private func freizeichenStarten() {
-        guard audioLaeuft, !eingehend, !freizeichen.isPlaying, zustand == .klingelt || zustand == .waehlt else { return }
-        let f = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
-        let n = AVAudioFrameCount(44100 * 5)
-        guard let p = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: n), let k = p.floatChannelData?[0] else { return }
-        p.frameLength = n
-        for i in 0..<Int(n) {
-            if i < 44100 {
-                let huelle = min(1, Float(min(i, 44100 - i)) / 400)
-                k[i] = sin(2 * .pi * 425 * Float(i) / 44100) * 0.18 * huelle
-            } else { k[i] = 0 }
+        guard !eingehend, freizeichen == nil, zustand == .klingelt || zustand == .waehlt else { return }
+        let rate = 16000, n = rate * 5
+        var pcm = [Int16](repeating: 0, count: n)
+        for i in 0..<rate {
+            let huelle = min(1.0, Double(min(i, rate - i)) / 160)
+            pcm[i] = Int16(sin(2 * .pi * 425 * Double(i) / Double(rate)) * 0.5 * huelle * 32767)
         }
-        freizeichen.scheduleBuffer(p, at: nil, options: .loops, completionHandler: nil)
-        freizeichen.play()
+        var wav = Data()
+        func u32(_ v: UInt32) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: UInt16) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 2)) }
+        wav.append("RIFF".data(using: .ascii)!); u32(UInt32(36 + n * 2)); wav.append("WAVEfmt ".data(using: .ascii)!)
+        u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate * 2)); u16(2); u16(16)
+        wav.append("data".data(using: .ascii)!); u32(UInt32(n * 2))
+        pcm.withUnsafeBufferPointer { wav.append(Data(buffer: $0)) }
+        guard let p = try? AVAudioPlayer(data: wav) else { melden("Freizeichen: Player ließ sich nicht anlegen"); return }
+        p.numberOfLoops = -1
+        p.volume = 1
+        p.prepareToPlay()
+        if !p.play() { melden("Freizeichen: Abspielen fehlgeschlagen") }
+        freizeichen = p
+    }
+
+    private func freizeichenStoppen() {
+        freizeichen?.stop()
+        freizeichen = nil
     }
 }

@@ -47,8 +47,15 @@ struct HauptAnsicht: View {
             }
             Push.shared.anmeldenWennMoeglich = { Task { await Push.shared.anmelden(v) } }
         }
+        .overlay(alignment: .topTrailing) {
+            if v.zustand == .verbunden && chatMit == nil {
+                RegieKnopf().padding(.trailing, 14).padding(.top, 4)
+            }
+        }
         .task(id: v.zustand) {
             guard v.zustand == .verbunden else { return }
+            Erstellungen.shared.starten(v)
+            await Erstellungen.shared.nachladen(v)
             await klingeltPruefen()
             zielAbarbeiten()
             await Push.shared.einrichten()

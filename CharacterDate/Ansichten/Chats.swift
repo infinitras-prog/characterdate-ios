@@ -79,6 +79,7 @@ struct ChatAnsicht: View {
     @State private var stimmeFrage: URL?
     @State private var stimmeLaedt = false
     @State private var date: DateInfo?
+    @State private var dateVideo = false
     @State private var dateWahl = false
     @State private var stimmeBearbeiten = false
     @State private var schlange: [String] = []
@@ -193,6 +194,7 @@ struct ChatAnsicht: View {
                         } else {
                             Button { dateWahl = true } label: { Label("Date …", systemImage: "heart.circle") }
                         }
+                        Button { dateVideo = true } label: { Label("Date-Video …", systemImage: "film.stack") }
                         Button { Task { await storyJetzt() } } label: { Label("Story jetzt", systemImage: "sparkles") }
                         if c?.hatStimme == true {
                             Button { stimmeBearbeiten = true } label: { Label("Stimme bearbeiten", systemImage: "waveform.badge.magnifyingglass") }
@@ -269,6 +271,7 @@ struct ChatAnsicht: View {
                             && !n.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { vorlesenLassen(n.id) }
                     }
                 case "aktualisiert": if let n = e.nachricht, let i = nachrichten.firstIndex(where: { $0.id == n.id }) { nachrichten[i] = n }
+                case "geloescht": if let mid = e.roh["nachricht_id"] as? String { nachrichten.removeAll { $0.id == mid } }
                 case "gelesen": gelesenBis = e.roh["bis"] as? Double ?? gelesenBis
                 case "tippt": tippt = e.roh["an"] as? Bool ?? false; tipptArt = e.roh["art"] as? String ?? "text"
                 case "fehler": fehler = e.roh["text"] as? String; tippt = false
@@ -278,7 +281,8 @@ struct ChatAnsicht: View {
         }
         .onDisappear { if let abo { v.abbestellen(abo) }; leiseStellen() }
         .onChange(of: foto) { _, neu in if let neu { Task { await fotoSenden(neu) } } }
-        .fullScreenCover(item: $gross) { b in BildVollbild(bild: b) }
+        .fullScreenCover(item: $gross) { b in BildVollbild(bild: b, geaendert: { Task { await laden() } }) }
+        .sheet(isPresented: $dateVideo) { if let c { DateVideoBlatt(c: c, ort: date?.ort) } }
     }
 
     // MARK: Zeilen
@@ -313,12 +317,9 @@ struct ChatAnsicht: View {
         switch m.art {
         case "bild":
             if !ich && m.m("status")?.text == "entsteht" {
-                VStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text(m.m("kritik") != nil ? "📷 Neuer Versuch – diesmal anders …" : m.m("art")?.text == "aenderung" ? "📷 Foto wird geändert …" : "📷 Foto wird aufgenommen …").font(.footnote)
-                    Text("beim ersten Foto bis zu 2 Min.").font(.caption2).foregroundStyle(Farbe.text3)
-                }
-                    .frame(width: 220, height: 290).background(Farbe.verlauf.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 18))
+                ErstellungsKarte(nid: m.id, titel: m.m("kritik") != nil ? "Neues Foto" : m.m("art")?.text == "aenderung" ? "Foto wird geändert"
+                                 : m.m("art")?.text == "wirfoto" ? "Euer Foto" : "Foto",
+                                 symbol: m.m("art")?.text == "wirfoto" ? "heart.fill" : m.m("art")?.text == "aenderung" ? "wand.and.stars" : "camera.fill")
             } else if let pfad = m.m("bild")?.text {
                 VStack(alignment: .leading, spacing: 0) {
                     NetzBild(pfad: pfad).frame(width: 230, height: 300).clipped()
@@ -337,12 +338,8 @@ struct ChatAnsicht: View {
             }
         case "video":
             if m.m("status")?.text == "entsteht" {
-                VStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text("🎬 Video wird gedreht …").font(.footnote)
-                    Text("dauert ein paar Minuten").font(.caption2).foregroundStyle(Farbe.text3)
-                }
-                .frame(width: 220, height: 290).background(Farbe.verlauf.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 18))
+                ErstellungsKarte(nid: m.id, titel: m.m("art")?.text == "datevideo" ? "Euer Date-Video" : "Video",
+                                 symbol: m.m("art")?.text == "datevideo" ? "heart.fill" : "film.fill", breite: 240)
             } else if let pfad = m.m("video")?.text {
                 ChatVideo(pfad: pfad).frame(width: 230, height: 330).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {

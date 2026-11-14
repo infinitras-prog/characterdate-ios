@@ -161,22 +161,11 @@ struct EinstellungenAnsicht: View {
                 Text("Chats, Bilder und Erinnerungen liegen verschlüsselt auf deinem PC. Das iPhone zeigt sie nur an.")
             }
             Section {
-                Picker("Bildqualität", selection: $qualitaet) {
-                    ForEach(stufen, id: \.0) { Text($0.1).tag($0.0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: qualitaet) { _, neu in
-                    Task {
-                        struct Q: Decodable { let stufe: String }
-                        let _: Q? = try? await v.anfrage("/api/bild/qualitaet", methode: "PUT", body: ["stufe": neu])
-                    }
-                }
-            } header: { Text("Bildqualität") } footer: {
-                Text(qualitaet == "maximum" ? "Höchste Qualität: mehr Rechenschritte, höhere Auflösung und ein zweiter Feinschliff-Durchgang. Dauert länger."
-                     : qualitaet == "ausgewogen" ? "Gute Qualität in kürzerer Zeit." : "Schnelle Vorschau-Qualität.")
-            }
+                RegieZeile()
+            } header: { Text("Regie (Hauptsprachmodell)") }
+            AlleEinstellungen()
             Section {
-                Text("Modelle, Bild-Feineinstellungen und der Store werden am PC verwaltet. Eine Stimmprobe kannst du im Chat über „…“ hochladen.")
+                Text("Modell-Downloads, Bild-Feineinstellungen und der Store werden am PC verwaltet. Eine Stimmprobe kannst du im Chat über „…“ hochladen.")
                     .font(.footnote).foregroundStyle(Farbe.text2)
             }
             Section {
@@ -188,10 +177,6 @@ struct EinstellungenAnsicht: View {
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("Einstellungen")
-        .task {
-            struct Q: Decodable { let stufe: String }
-            if let q: Q = try? await v.anfrage("/api/bild/qualitaet") { qualitaet = q.stufe }
-        }
         .confirmationDialog("Vom PC entkoppeln?", isPresented: $entkoppelnFrage, titleVisibility: .visible) {
             Button("Entkoppeln", role: .destructive) { v.entkoppeln() }
         } message: {
