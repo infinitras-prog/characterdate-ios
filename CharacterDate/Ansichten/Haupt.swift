@@ -157,7 +157,7 @@ struct HeldKarte: View {
         .shadow(color: Farbe.rose.opacity(0.18), radius: 20)
         .scaleEffect(da ? 1 : 0.94).opacity(da ? 1 : 0)
         .onAppear {
-            zoom = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { zoom = true }
             withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { da = true }
         }
     }

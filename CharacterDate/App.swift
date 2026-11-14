@@ -64,14 +64,17 @@ struct Sperre: View {
 /// Logo-Herz mit Herzschlag.
 struct Herz: View {
     var groesse: CGFloat = 40
-    @State private var schlag = false
     var body: some View {
+        // Herzschlag nur als Größenänderung (PhaseAnimator) – die frühere repeatForever-Animation hat beim Einblenden
+        // auch die Position mitgenommen, das Logo »flog« dann auf und ab.
         Image("Logo").resizable().scaledToFit()
             .frame(width: groesse * 1.25, height: groesse * 1.25)
             .clipShape(RoundedRectangle(cornerRadius: groesse * 0.28, style: .continuous))
             .shadow(color: Farbe.rose.opacity(0.55), radius: 14)
-            .scaleEffect(schlag ? 1.08 : 1)
-            .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: schlag)
-            .onAppear { schlag = true }
+            .phaseAnimator([1.0, 1.1, 0.98, 1.05, 1.0]) { inhalt, phase in
+                inhalt.scaleEffect(phase)
+            } animation: { phase in
+                phase == 1.0 ? .easeInOut(duration: 0.9) : .easeInOut(duration: 0.14)
+            }
     }
 }

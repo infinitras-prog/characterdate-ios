@@ -308,6 +308,6 @@ struct TippPunkte: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(Color(red: 0.17, green: 0.15, blue: 0.25), in: Capsule())
-        .onAppear { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi * 2 } }
+        .onAppear { DispatchQueue.main.async { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi * 2 } } }
     }
 }

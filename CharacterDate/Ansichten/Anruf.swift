@@ -37,7 +37,9 @@ struct AnrufAnsicht: View {
         .statusBarHidden(telefon.zustand == .aktiv)
         .onAppear {
             telefon.starten(v, char: c)
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
+                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
+            }
         }
         .onDisappear { if telefon.zustand != .beendet { telefon.beenden() } }
         .onChange(of: telefon.zustand) { _, z in
