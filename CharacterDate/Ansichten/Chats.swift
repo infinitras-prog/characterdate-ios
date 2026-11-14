@@ -87,7 +87,10 @@ struct ChatAnsicht: View {
                         if let fehler { Text(fehler).font(.footnote).foregroundStyle(Farbe.rose).padding(8) }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.78), value: nachrichten.count)
+                    .animation(.easeOut(duration: 0.25), value: tippt)
                 }
+                .sensoryFeedback(.impact(weight: .light), trigger: nachrichten.count)
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: nachrichten.count) { _, _ in withAnimation { leser.scrollTo(nachrichten.last?.id, anchor: .bottom) } }
                 .onChange(of: tippt) { _, an in if an { withAnimation { leser.scrollTo("tippt", anchor: .bottom) } } }
@@ -160,7 +163,8 @@ struct ChatAnsicht: View {
                 inhalt(m)
                 if !m.vonMir { Spacer(minLength: 50) }
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.asymmetric(insertion: .scale(scale: 0.86, anchor: m.vonMir ? .bottomTrailing : .bottomLeading).combined(with: .opacity),
+                                    removal: .opacity))
         }
     }
 

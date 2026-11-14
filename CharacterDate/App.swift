@@ -6,6 +6,7 @@ struct CharacterDateApp: App {
     @State private var verbindung = Verbindung()
     @AppStorage("faceid") private var faceID = false
     @State private var gesperrt = true
+    @State private var splash = true
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -18,6 +19,7 @@ struct CharacterDateApp: App {
                     HauptAnsicht()
                 }
                 if faceID && gesperrt { Sperre { gesperrt = false } }
+                if splash { Splash { splash = false }.transition(.opacity).zIndex(10) }
             }
             .environment(verbindung)
             .preferredColorScheme(.dark)
@@ -59,12 +61,17 @@ struct Sperre: View {
     }
 }
 
+/// Logo-Herz mit Herzschlag.
 struct Herz: View {
     var groesse: CGFloat = 40
+    @State private var schlag = false
     var body: some View {
-        Image(systemName: "heart")
+        Image(systemName: "heart.fill")
             .font(.system(size: groesse, weight: .semibold))
             .foregroundStyle(Farbe.verlauf)
-            .shadow(color: Farbe.rose.opacity(0.5), radius: 12)
+            .shadow(color: Farbe.rose.opacity(0.55), radius: 14)
+            .scaleEffect(schlag ? 1.08 : 1)
+            .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: schlag)
+            .onAppear { schlag = true }
     }
 }

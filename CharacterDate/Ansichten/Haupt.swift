@@ -84,6 +84,11 @@ struct HomeAnsicht: View {
                         HStack(spacing: 12) {
                             ForEach(fertig) { c in
                                 Button { oeffnen(c) } label: { MiniKarte(c: c) }.buttonStyle(.plain)
+                                    .scrollTransition(.interactive, axis: .horizontal) { inhalt, phase in
+                                        inhalt.scaleEffect(phase.isIdentity ? 1 : 0.88)
+                                            .opacity(phase.isIdentity ? 1 : 0.6)
+                                            .rotation3DEffect(.degrees(phase.value * -14), axis: (x: 0, y: 1, z: 0))
+                                    }
                             }
                         }
                     }
@@ -117,14 +122,18 @@ struct VerbindungsLeiste: View {
 struct HeldKarte: View {
     let c: Charakter
     let oeffnen: () -> Void
+    @State private var zoom = false
+    @State private var da = false
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             NetzBild(pfad: c.avatarUrl)
+                .scaleEffect(zoom ? 1.08 : 1.0)          // langsamer Ken-Burns-Zoom
+                .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: zoom)
             LinearGradient(colors: [.clear, .clear, Farbe.grund.opacity(0.95)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack { Text(c.name).font(.system(size: 32, weight: .semibold, design: .rounded)); Image(systemName: "heart").foregroundStyle(Farbe.rose) }
+                        HStack { Text(c.name).font(.system(size: 32, weight: .semibold, design: .rounded)); Image(systemName: "heart.fill").foregroundStyle(Farbe.rose).symbolEffect(.pulse, options: .repeating) }
                         Text(c.dna.kurzbeschreibung ?? "").font(.subheadline).foregroundStyle(Farbe.text2).lineLimit(2)
                     }
                     Spacer()
@@ -146,6 +155,11 @@ struct HeldKarte: View {
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Farbe.rose.opacity(0.35), lineWidth: 1))
         .shadow(color: Farbe.rose.opacity(0.18), radius: 20)
+        .scaleEffect(da ? 1 : 0.94).opacity(da ? 1 : 0)
+        .onAppear {
+            zoom = true
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { da = true }
+        }
     }
 }
 

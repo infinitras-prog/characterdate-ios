@@ -13,14 +13,73 @@ enum Farbe {
     static let verlauf = LinearGradient(colors: [violett, rose], startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
+/// Lebendiger Hintergrund wie am PC: drei weiche Lichtflecken (Rosé, Violett, Bernstein) wandern langsam.
 struct Hintergrund: View {
+    @Environment(\.accessibilityReduceMotion) private var ruhig
     var body: some View {
-        ZStack {
-            Farbe.grund
-            RadialGradient(colors: [Farbe.rose.opacity(0.22), .clear], center: .topTrailing, startRadius: 10, endRadius: 420)
-            RadialGradient(colors: [Farbe.violett.opacity(0.24), .clear], center: .bottomLeading, startRadius: 10, endRadius: 460)
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: ruhig)) { zeit in
+            let t = zeit.date.timeIntervalSinceReferenceDate
+            GeometryReader { g in
+                let w = g.size.width, h = g.size.height
+                ZStack {
+                    Farbe.grund
+                    fleck(Farbe.rose.opacity(0.30), r: w * 0.9,
+                          x: w * (0.85 + 0.12 * sin(t / 9)), y: h * (0.05 + 0.08 * cos(t / 11)))
+                    fleck(Farbe.violett.opacity(0.32), r: w * 1.0,
+                          x: w * (0.1 + 0.15 * cos(t / 12)), y: h * (0.85 + 0.07 * sin(t / 10)))
+                    fleck(Color(red: 0.96, green: 0.72, blue: 0.38).opacity(0.10), r: w * 0.6,
+                          x: w * (0.5 + 0.25 * sin(t / 14)), y: h * (0.45 + 0.15 * cos(t / 13)))
+                }
+            }
         }
         .ignoresSafeArea()
+    }
+
+    private func fleck(_ farbe: Color, r: CGFloat, x: CGFloat, y: CGFloat) -> some View {
+        Circle().fill(RadialGradient(colors: [farbe, .clear], center: .center, startRadius: 0, endRadius: r / 2))
+            .frame(width: r, height: r).position(x: x, y: y).blendMode(.screen)
+    }
+}
+
+/// Startbildschirm: Herz-Video aus NitraX in Schleife, Schriftzug mit Lichtschimmer, Funken – dann weiche Blende.
+struct Splash: View {
+    let fertig: () -> Void
+    @State private var schrift = false
+    @State private var schimmer = false
+    @State private var weg = false
+    var body: some View {
+        ZStack {
+            Farbe.grund.ignoresSafeArea()
+            SchleifenVideo(name: "splash").ignoresSafeArea().scaleEffect(weg ? 1.15 : 1.02)
+            LinearGradient(colors: [.clear, Farbe.grund.opacity(0.92)], startPoint: .center, endPoint: .bottom).ignoresSafeArea()
+            VStack(spacing: 10) {
+                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("Character").foregroundStyle(.white)
+                    Text("Date").foregroundStyle(Farbe.verlauf)
+                        .overlay(
+                            LinearGradient(colors: [.clear, .white.opacity(0.8), .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: 60).offset(x: schimmer ? 90 : -90).blendMode(.overlay)
+                                .mask(Text("Date"))
+                        )
+                    Text("AI").font(.system(size: 14, weight: .semibold)).tracking(3)
+                        .foregroundStyle(Color(red: 0.96, green: 0.72, blue: 0.38)).padding(.leading, 6)
+                }
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .opacity(schrift ? 1 : 0).offset(y: schrift ? 0 : 16).blur(radius: schrift ? 0 : 8)
+                Text("Deine Begleitung erwacht …").font(.footnote).foregroundStyle(Farbe.text2).opacity(schrift ? 1 : 0)
+                Spacer().frame(height: 70)
+            }
+        }
+        .opacity(weg ? 0 : 1)
+        .onAppear {
+            withAnimation(.spring(duration: 0.9).delay(0.3)) { schrift = true }
+            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false).delay(1.0)) { schimmer = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) {
+                withAnimation(.easeInOut(duration: 0.8)) { weg = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { fertig() }
+            }
+        }
     }
 }
 
