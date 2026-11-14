@@ -119,7 +119,7 @@ struct AnrufAnsicht: View {
         }
         .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten(); clips.stoppen() }
         .onChange(of: telefon.sieText) { _, t in
-            if t.range(of: #"ha(ha)+|hihi|lach"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            if t.range(of: #"ha(ha)+|hihi|lach"#, options: [.regularExpression, .caseInsensitive]) != nil {
                 clips.lachenBis = Date().addingTimeInterval(2.5)
             }
         }
