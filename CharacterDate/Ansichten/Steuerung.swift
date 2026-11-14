@@ -280,8 +280,12 @@ struct AlleEinstellungen: View {
         Section {
             Toggle("Sie darf Fotos schicken", isOn: bindung("bilder_aktiv", true))
             Picker("Fotoqualität", selection: bindung("bild.qualitaet", "maximum")) {
-                Text("Schnell").tag("schnell"); Text("Ausgewogen").tag("ausgewogen"); Text("Maximum").tag("maximum")
+                Text("Blitz").tag("blitz"); Text("Schnell").tag("schnell"); Text("Ausgewogen").tag("ausgewogen"); Text("Max").tag("maximum")
             }.pickerStyle(.segmented)
+            if h.wert("bild.qualitaet", "maximum") == "blitz" {
+                Text("Wie eine Bild-SMS: in wenigen Sekunden da – kleiner, ohne Bild-Agent und ohne Prüfrunde.")
+                    .font(.footnote).foregroundStyle(Farbe.text2)
+            }
             Toggle("Fotoprüfung (Hände, Körper, Gesicht)", isOn: bindung("bild.qualitaetspruefung", true))
             Toggle("Handy-Look", isOn: bindung("bild.handylook", true))
         } header: { Text("Fotos") }
