@@ -161,6 +161,8 @@ struct ChatAnsicht: View {
                     Button {
                         if c?.hatStimme != true { keineStimme = true; return }
                         vorlesen.toggle(); UserDefaults.standard.set(vorlesen, forKey: vorleseSchluessel)
+                        let an = vorlesen
+                        Task { struct A: Decodable { let an: Bool }; let _: A? = try? await v.anfrage("/api/charaktere/\(charId)/vorlesen", methode: "PUT", body: ["an": an]) }
                         if !vorlesen { leiseStellen() }
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: { Image(systemName: vorlesen ? "speaker.wave.2.fill" : "speaker.slash") }
