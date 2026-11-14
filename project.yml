@@ -35,6 +35,8 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
         UIBackgroundModes: [audio]
         NSCameraUsageDescription: Zum Scannen des Kopplungs-Codes am PC und für Fotos, die du im Chat schickst.
