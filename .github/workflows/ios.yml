@@ -109,7 +109,7 @@ jobs:
             MARKETING_VERSION="$(tr -d '[:space:]' < VERSION)" \
             CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
             OTHER_CODE_SIGN_FLAGS="--keychain $NX_KEYCHAIN" \
-            NX_PROFIL_APP="$NX_PROFIL_APP" \
+            NX_PROFIL_APP="$NX_PROFIL_APP" NX_PROFIL_WIDGET="$NX_PROFIL_WIDGET" \
             archive | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
           grep -q "ARCHIVE SUCCEEDED" archive.log
       - name: Export-Einstellungen
@@ -125,6 +125,7 @@ jobs:
             <key>teamID</key><string>${DEVELOPMENT_TEAM}</string>
             <key>provisioningProfiles</key><dict>
               <key>de.infinitras.characterdate</key><string>${NX_PROFIL_APP}</string>
+              <key>de.infinitras.characterdate.widget</key><string>${NX_PROFIL_WIDGET}</string>
             </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
             <key>uploadSymbols</key><true/>

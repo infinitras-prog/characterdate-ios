@@ -14,8 +14,8 @@ import base64, json, os, subprocess, sys, time, urllib.error, urllib.request
 import jwt  # PyJWT (auf dem Build-Rechner installiert)
 
 API = "https://api.appstoreconnect.apple.com/v1"
-BUNDLES = {"APP": "de.infinitras.characterdate"}
-NAMEN = {"APP": "CharacterDate AI"}         # App-ID legt der Lauf selbst an, falls sie fehlt
+BUNDLES = {"APP": "de.infinitras.characterdate", "WIDGET": "de.infinitras.characterdate.widget"}
+NAMEN = {"APP": "CharacterDate AI", "WIDGET": "CharacterDate Widget"}         # App-ID legt der Lauf selbst an, falls sie fehlt
 TMP = os.environ.get("RUNNER_TEMP", "/tmp")
 ORDNER = os.path.join(TMP, "signatur")
 LISTE = os.path.join(ORDNER, "angelegt.json")

@@ -8,6 +8,7 @@ struct HauptAnsicht: View {
     @State private var ruft: Klingeln?
     @State private var angenommen: Klingeln?
     @State private var abo: UUID?
+    @State private var widgetUhr: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,8 +40,22 @@ struct HauptAnsicht: View {
                     ruft = Klingeln(c: c, video: e.roh["video"] as? Bool ?? false)
                 }
                 if e.typ == "anruf_ende", ruft?.c.id == e.charId { ruft = nil }
+                if e.typ == "nachricht" {
+                    widgetUhr?.cancel()
+                    widgetUhr = Task { try? await Task.sleep(for: .seconds(4)); await v.neuLaden(); await WidgetSchreiber.aktualisieren(v) }
+                }
             }
+            Push.shared.anmeldenWennMoeglich = { Task { await Push.shared.anmelden(v) } }
         }
+        .task(id: v.zustand) {
+            guard v.zustand == .verbunden else { return }
+            await klingeltPruefen()
+            zielAbarbeiten()
+            await Push.shared.einrichten()
+            await Push.shared.anmelden(v)
+            await WidgetSchreiber.aktualisieren(v)
+        }
+        .onChange(of: Push.shared.ziel) { _, _ in zielAbarbeiten() }
         .onDisappear { if let abo { v.abbestellen(abo) } }
         .fullScreenCover(item: $ruft) { k in
             KlingelAnsicht(k: k) { video in
@@ -52,6 +67,35 @@ struct HauptAnsicht: View {
             }
         }
         .fullScreenCover(item: $angenommen) { k in AnrufAnsicht(c: k.c, video: k.video, eingehend: true) }
+    }
+}
+
+extension HauptAnsicht {
+    private struct KlingeltGerade: Decodable { let charId: String; let video: Bool? }
+
+    /// Gerade erst verbunden (z. B. über die Mitteilung »sie ruft an« geöffnet): klingelt es noch?
+    @MainActor
+    func klingeltPruefen() async {
+        guard ruft == nil, angenommen == nil, !Telefon.laeuft,
+              let l: [KlingeltGerade] = try? await v.anfrage("/api/anruf/klingelt"),
+              let k = l.first, let c = v.charaktere.first(where: { $0.id == k.charId }) else { return }
+        ruft = Klingeln(c: c, video: k.video ?? false)
+    }
+
+    /// Angetippte Mitteilung oder Widget: Chat öffnen bzw. Anruf zeigen.
+    @MainActor
+    func zielAbarbeiten() {
+        guard let z = Push.shared.ziel, v.zustand == .verbunden,
+              let c = v.charaktere.first(where: { $0.id == z.charId }) else { return }
+        Push.shared.ziel = nil
+        if z.anruf {
+            Task {
+                await klingeltPruefen()
+                if ruft == nil, angenommen == nil { chatMit = c; tab = 1 }     // schon vorbei → Chat (dort steht »verpasst«)
+            }
+        } else {
+            chatMit = c; tab = 1
+        }
     }
 }
 

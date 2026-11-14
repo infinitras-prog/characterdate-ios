@@ -3,6 +3,7 @@ import LocalAuthentication
 
 @main
 struct CharacterDateApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var verbindung = Verbindung()
     @AppStorage("faceid") private var faceID = false
     @State private var gesperrt = true
@@ -25,6 +26,12 @@ struct CharacterDateApp: App {
             .preferredColorScheme(.dark)
             .tint(Farbe.rose)
             .task { if verbindung.gekoppelt { await verbindung.verbinden() } }
+            .onOpenURL { url in
+                // Widget: characterdate://chat/<id>
+                if url.scheme == "characterdate", url.host == "chat", let cid = url.pathComponents.last, cid != "/" {
+                    Push.shared.ziel = .init(charId: cid, anruf: false, video: false)
+                }
+            }
             .onChange(of: phase) { _, neu in
                 if neu == .background, !Telefon.laeuft { gesperrt = true }      // im Anruf nicht sperren
                 if neu == .active, verbindung.gekoppelt, verbindung.zustand != .verbunden, !Telefon.laeuft {

@@ -11,7 +11,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.8.3"
+    MARKETING_VERSION: "0.8.4"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
@@ -22,6 +22,7 @@ targets:
     platform: iOS
     sources:
       - path: CharacterDate
+      - path: Gemeinsam
     info:
       path: CharacterDate/Info.plist
       properties:
@@ -38,7 +39,10 @@ targets:
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, remote-notification]
+        CFBundleURLTypes:
+          - CFBundleURLName: de.infinitras.characterdate
+            CFBundleURLSchemes: [characterdate]
         NSCameraUsageDescription: Zum Scannen des Kopplungs-Codes am PC, für Fotos im Chat und – nur wenn du es im Anruf einschaltest – als ihre Augen, damit sie sieht, was du ihr zeigst.
         NSMicrophoneUsageDescription: Für Sprachnachrichten und Anrufe mit deinen Charakteren.
         NSPhotoLibraryUsageDescription: Damit du Fotos aus deiner Mediathek im Chat schicken kannst.
@@ -48,9 +52,44 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+    entitlements:
+      path: CharacterDate/CharacterDate.entitlements
+      properties:
+        com.apple.security.application-groups: [group.de.infinitras.characterdate]
+        aps-environment: $(APS_ENVIRONMENT)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         PROVISIONING_PROFILE_SPECIFIER: $(NX_PROFIL_APP)
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
+    dependencies:
+      - target: CharacterDateWidget
+  CharacterDateWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CharacterDateWidget
+      - path: Gemeinsam
+    info:
+      path: CharacterDateWidget/Info.plist
+      properties:
+        CFBundleDisplayName: CharacterDate
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: CharacterDateWidget/CharacterDateWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.de.infinitras.characterdate]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate.widget
+        PROVISIONING_PROFILE_SPECIFIER: $(NX_PROFIL_WIDGET)
+        SKIP_INSTALL: YES
