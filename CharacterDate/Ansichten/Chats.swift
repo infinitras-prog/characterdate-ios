@@ -56,6 +56,7 @@ struct ChatAnsicht: View {
     @State private var abo: UUID?
     @State private var rekorder = Rekorder()
     @State private var anruf = false
+    @State private var mitVideo = false
     @State private var keineStimme = false
     @FocusState private var fokus: Bool
 
@@ -114,12 +115,17 @@ struct ChatAnsicht: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { if c?.hatStimme == true { anruf = true } else { keineStimme = true } } label: { Image(systemName: "phone.fill") }
-                    .accessibilityLabel("Anrufen")
-                    .disabled(c == nil || v.zustand != .verbunden)
+                HStack(spacing: 14) {
+                    Button { if c?.hatStimme == true { mitVideo = true; anruf = true } else { keineStimme = true } } label: { Image(systemName: "video.fill") }
+                        .accessibilityLabel("Videoanruf")
+                        .disabled(c == nil || c?.avatarUrl == nil || v.zustand != .verbunden)
+                    Button { if c?.hatStimme == true { mitVideo = false; anruf = true } else { keineStimme = true } } label: { Image(systemName: "phone.fill") }
+                        .accessibilityLabel("Anrufen")
+                        .disabled(c == nil || v.zustand != .verbunden)
+                }
             }
         }
-        .fullScreenCover(isPresented: $anruf) { if let c { AnrufAnsicht(c: c) } }
+        .fullScreenCover(isPresented: $anruf) { if let c { AnrufAnsicht(c: c, video: mitVideo) } }
         .alert("Noch keine Stimme", isPresented: $keineStimme) {
             Button("OK", role: .cancel) {}
         } message: {

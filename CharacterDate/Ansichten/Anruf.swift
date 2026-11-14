@@ -5,21 +5,29 @@ struct AnrufAnsicht: View {
     @Environment(Verbindung.self) private var v
     @Environment(\.dismiss) private var schliessen
     let c: Charakter
+    var video = false
     @State private var telefon = Telefon()
     @State private var puls = false
+    @State private var portraet: UIImage?
 
     var body: some View {
         ZStack {
             Farbe.grund.ignoresSafeArea()
-            if let a = c.avatarUrl {
+            if video, let portraet {
+                // Videoanruf: ihr Profilbild lebt (Mund nach Stimme, Blinzeln, Kopfbewegung)
+                LebendigesPortraet(bild: portraet, pegel: { telefon.pegelSie }, aktiv: telefon.zustand == .aktiv)
+                    .ignoresSafeArea()
+                LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            } else if let a = c.avatarUrl {
                 NetzBild(pfad: a).ignoresSafeArea().blur(radius: 40).opacity(0.55).scaleEffect(1.2)
             }
             LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
 
             VStack(spacing: 18) {
-                Spacer(minLength: 40)
-                ring
+                Spacer(minLength: video ? 10 : 40)
+                if !video { ring }
                 Text(c.name).font(.system(size: 32, weight: .semibold))
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text(statusText).font(.headline.monospacedDigit()).foregroundStyle(Farbe.text2)
@@ -35,12 +43,15 @@ struct AnrufAnsicht: View {
                 }
                 Spacer()
                 untertitel
-                Spacer()
+                if !video { Spacer() }
                 knoepfe.padding(.bottom, 30)
             }
             .foregroundStyle(.white)
         }
         .statusBarHidden(telefon.zustand == .aktiv)
+        .task {
+            if video, let a = c.avatarUrl, let d = try? await v.medien(a) { portraet = UIImage(data: d) }
+        }
         .onAppear {
             telefon.starten(v, char: c)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
