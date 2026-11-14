@@ -41,48 +41,6 @@ struct Hintergrund: View {
     }
 }
 
-/// Startbildschirm: Herz-Video aus NitraX in Schleife, Schriftzug mit Lichtschimmer, Funken – dann weiche Blende.
-struct Splash: View {
-    let fertig: () -> Void
-    @State private var schrift = false
-    @State private var schimmer = false
-    @State private var weg = false
-    var body: some View {
-        ZStack {
-            Farbe.grund.ignoresSafeArea()
-            SchleifenVideo(name: "splash").ignoresSafeArea().scaleEffect(weg ? 1.15 : 1.02)
-            LinearGradient(colors: [.clear, Farbe.grund.opacity(0.92)], startPoint: .center, endPoint: .bottom).ignoresSafeArea()
-            VStack(spacing: 10) {
-                Spacer()
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text("Character").foregroundStyle(.white)
-                    Text("Date").foregroundStyle(Farbe.verlauf)
-                        .overlay(
-                            LinearGradient(colors: [.clear, .white.opacity(0.8), .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 60).offset(x: schimmer ? 90 : -90).blendMode(.overlay)
-                                .mask(Text("Date"))
-                        )
-                    Text("AI").font(.system(size: 14, weight: .semibold)).tracking(3)
-                        .foregroundStyle(Color(red: 0.96, green: 0.72, blue: 0.38)).padding(.leading, 6)
-                }
-                .font(.system(size: 40, weight: .bold, design: .rounded))
-                .opacity(schrift ? 1 : 0).offset(y: schrift ? 0 : 16).blur(radius: schrift ? 0 : 8)
-                Text("Deine Begleitung erwacht …").font(.footnote).foregroundStyle(Farbe.text2).opacity(schrift ? 1 : 0)
-                Spacer().frame(height: 70)
-            }
-        }
-        .opacity(weg ? 0 : 1)
-        .onAppear {
-            withAnimation(.spring(duration: 0.9).delay(0.3)) { schrift = true }
-            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false).delay(1.0)) { schimmer = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) {
-                withAnimation(.easeInOut(duration: 0.8)) { weg = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { fertig() }
-            }
-        }
-    }
-}
-
 struct Glas: ViewModifier {
     var radius: CGFloat = 22
     func body(content: Content) -> some View {
