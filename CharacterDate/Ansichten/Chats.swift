@@ -5,6 +5,9 @@ import PhotosUI
 struct ChatListe: View {
     @Environment(Verbindung.self) private var v
     @Binding var auswahl: Charakter?
+    @State private var lager = StoryLager()
+    @State private var storyVon: Charakter?
+    @State private var abo: UUID?
 
     var sortiert: [Charakter] {
         v.charaktere.filter { ($0.entwurf ?? 0) == 0 }.sorted { ($0.letzte?.zustellen ?? 0) > ($1.letzte?.zustellen ?? 0) }
@@ -15,7 +18,10 @@ struct ChatListe: View {
             ForEach(sortiert) { c in
                 Button { auswahl = c } label: {
                     HStack(spacing: 12) {
-                        Avatar(c: c, groesse: 52, online: true)
+                        StoryRing(hat: !(lager.storys[c.id] ?? []).isEmpty, neu: lager.neu(c.id)) {
+                            Avatar(c: c, groesse: 52, online: true)
+                        }
+                        .onTapGesture { if !(lager.storys[c.id] ?? []).isEmpty { storyVon = c } else { auswahl = c } }
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(c.name).font(.headline)
@@ -40,6 +46,14 @@ struct ChatListe: View {
         .navigationTitle("Chats")
         .refreshable { await v.neuLaden() }
         .navigationDestination(item: $auswahl) { c in ChatAnsicht(charId: c.id) }
+        .task { await lager.laden(v) }
+        .onAppear { abo = v.abonnieren { e in if e.typ == "story" { Task { await lager.laden(v) } } } }
+        .onDisappear { if let abo { v.abbestellen(abo) } }
+        .fullScreenCover(item: $storyVon) { c in
+            StoryBetrachter(c: c, storys: lager.storys[c.id] ?? []) { sid in
+                if var l = lager.storys[c.id], let k = l.firstIndex(where: { $0.id == sid }) { l[k].gesehen = true; lager.storys[c.id] = l }
+            }
+        }
     }
 }
 
@@ -64,6 +78,8 @@ struct ChatAnsicht: View {
     @State private var stimmeWaehlen = false
     @State private var stimmeFrage: URL?
     @State private var stimmeLaedt = false
+    @State private var date: DateInfo?
+    @State private var dateWahl = false
     @State private var schlange: [String] = []
     @State private var liest: String?
     @State private var amEnde = true
@@ -171,6 +187,12 @@ struct ChatAnsicht: View {
                         .accessibilityLabel(vorlesen ? "Vorlesen aus" : "Nachrichten vorlesen")
                         .disabled(c == nil || v.zustand != .verbunden)
                     Menu {
+                        if let date {
+                            Button(role: .destructive) { Task { await dateBeenden() } } label: { Label("Date beenden (\(date.ort))", systemImage: "heart.slash") }
+                        } else {
+                            Button { dateWahl = true } label: { Label("Date …", systemImage: "heart.circle") }
+                        }
+                        Button { Task { await storyJetzt() } } label: { Label("Story jetzt", systemImage: "sparkles") }
                         Button { stimmeWaehlen = true } label: {
                             Label(c?.hatStimme == true ? "Neue Stimmprobe hochladen" : "Stimmprobe hochladen", systemImage: "waveform.badge.plus")
                         }
@@ -192,6 +214,18 @@ struct ChatAnsicht: View {
         } message: {
             Text("\(c?.name ?? "Sie") hat noch keine Stimme. Lade eine Stimmprobe hoch (MP3, WAV oder FLAC, bis 30 Sekunden) oder richte sie am PC im Editor ein – dann kannst du sie anrufen und dir ihre Nachrichten vorlesen lassen.")
         }
+        .sheet(isPresented: $dateWahl) { if let c { DateWahl(c: c) { d in date = d } } }
+        .safeAreaInset(edge: .top) {
+            if let date {
+                HStack {
+                    Text("\(date.emoji) Date: ").font(.footnote) + Text(date.ort).font(.footnote.bold())
+                    Spacer()
+                    Button("Beenden") { Task { await dateBeenden() } }.font(.footnote.bold())
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(LinearGradient(colors: [Farbe.rose.opacity(0.25), Farbe.violett.opacity(0.2)], startPoint: .leading, endPoint: .trailing))
+            }
+        }
         .fileImporter(isPresented: $stimmeWaehlen, allowedContentTypes: [.mp3, .wav, .audio, UTType(filenameExtension: "flac") ?? .audio]) { r in
             if case .success(let url) = r { stimmeFrage = url }
         }
@@ -205,6 +239,8 @@ struct ChatAnsicht: View {
         }
         .task {
             vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true
+            struct DS: Decodable { let date: DateInfo? }
+            if let d: DS = try? await v.anfrage("/api/charaktere/\(charId)/date") { date = d.date }
             await laden()
             // Stimme + Gehör am PC schon laden – Anrufe heben dann sofort ab
             if c?.hatStimme == true {
@@ -244,7 +280,10 @@ struct ChatAnsicht: View {
 
     @ViewBuilder
     private func zeile(_ m: Nachricht) -> some View {
-        if m.art == "anruf" {
+        if m.art == "date" {
+            Text(m.text).font(.caption.bold()).padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Farbe.rose.opacity(0.18), in: Capsule()).padding(.vertical, 6)
+        } else if m.art == "anruf" {
             Label(m.m("verpasst")?.wahr == true ? "Verpasster Anruf · \(uhrzeit(m.zustellen))" : "Telefonat · \(m.m("dauerText")?.text ?? "") · \(uhrzeit(m.zustellen))",
                   systemImage: m.m("verpasst")?.wahr == true ? "phone.down" : "phone")
                 .font(.footnote).padding(.horizontal, 14).padding(.vertical, 6)
@@ -290,6 +329,19 @@ struct ChatAnsicht: View {
                 .onTapGesture { gross = GrossesBild(pfad: pfad, bildId: m.m("bildId")?.text) }
             } else {
                 Text("📷 Das Foto ist nicht geworden.").font(.footnote).padding(10).glas(16)
+            }
+        case "video":
+            if m.m("status")?.text == "entsteht" {
+                VStack(spacing: 8) {
+                    ProgressView().tint(.white)
+                    Text("🎬 Video wird gedreht …").font(.footnote)
+                    Text("dauert ein paar Minuten").font(.caption2).foregroundStyle(Farbe.text3)
+                }
+                .frame(width: 220, height: 290).background(Farbe.verlauf.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 18))
+            } else if let pfad = m.m("video")?.text {
+                ChatVideo(pfad: pfad).frame(width: 230, height: 330).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            } else {
+                Text("🎬 Das Video ist nicht geworden.").font(.footnote).padding(10).glas(16)
             }
         case "sprache":
             VStack(alignment: .leading, spacing: 6) {
@@ -390,6 +442,20 @@ struct ChatAnsicht: View {
         } catch {
             liest = nil; schlange.removeAll(); fehler = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func dateBeenden() async {
+        struct A: Decodable {}
+        let _: A? = try? await v.anfrage("/api/charaktere/\(charId)/date/ende", methode: "POST")
+        date = nil
+    }
+
+    @MainActor
+    private func storyJetzt() async {
+        struct A: Decodable { let id: String }
+        do { let _: A = try await v.anfrage("/api/charaktere/\(charId)/story", methode: "POST", zeit: 300) }
+        catch { fehler = error.localizedDescription }
     }
 
     @MainActor

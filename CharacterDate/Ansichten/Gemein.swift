@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 
 /// Bild vom PC (Schlüssel im Header, Zwischenspeicher im Arbeitsspeicher).
 struct NetzBild: View {
@@ -224,5 +225,38 @@ struct BildVollbild: View {
             meldung = "Geändert – auch in der Galerie."
             geaendert?()
         } catch { meldung = error.localizedDescription }
+    }
+}
+
+
+/// Video im Chat: einmal vom PC laden (mit Schlüssel), dann lokal abspielen – stumm in Schleife, Tippen = mit Ton.
+struct ChatVideo: View {
+    @Environment(Verbindung.self) private var v
+    let pfad: String
+    @State private var spieler: AVPlayer?
+    @State private var ton = false
+
+    var body: some View {
+        ZStack {
+            if let spieler {
+                VideoPlayer(player: spieler)
+                    .onAppear { spieler.isMuted = !ton; spieler.play() }
+                    .onDisappear { spieler.pause() }
+            } else {
+                Color.white.opacity(0.06); ProgressView().tint(.white)
+            }
+        }
+        .task {
+            guard spieler == nil, let d = try? await v.medien(pfad) else { return }
+            let datei = FileManager.default.temporaryDirectory.appendingPathComponent((pfad as NSString).lastPathComponent)
+            try? d.write(to: datei)
+            let p = AVPlayer(url: datei)
+            p.isMuted = true
+            p.actionAtItemEnd = .none
+            NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main) { _ in
+                p.seek(to: .zero); p.play()
+            }
+            spieler = p
+        }
     }
 }
