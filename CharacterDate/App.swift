@@ -66,9 +66,9 @@ struct Herz: View {
     var groesse: CGFloat = 40
     @State private var schlag = false
     var body: some View {
-        Image(systemName: "heart.fill")
-            .font(.system(size: groesse, weight: .semibold))
-            .foregroundStyle(Farbe.verlauf)
+        Image("Logo").resizable().scaledToFit()
+            .frame(width: groesse * 1.25, height: groesse * 1.25)
+            .clipShape(RoundedRectangle(cornerRadius: groesse * 0.28, style: .continuous))
             .shadow(color: Farbe.rose.opacity(0.55), radius: 14)
             .scaleEffect(schlag ? 1.08 : 1)
             .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: schlag)

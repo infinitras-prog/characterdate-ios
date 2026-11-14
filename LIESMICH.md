@@ -3,7 +3,7 @@
 Native SwiftUI-App (iOS 17+). Die KI läuft auf deinem PC. Das iPhone verbindet sich im Heimnetz oder über
 Tailscale und zeigt Chats, Fotos und Sprachnachrichten an.
 
-## Was die App kann (Version 0.6.1)
+## Was die App kann (Version 0.6.2)
 
 - Mit dem PC koppeln: QR-Code scannen. Der Schlüssel liegt im iOS-Schlüsselbund und wird nur als Header gesendet.
 - Home mit Charakterkarten, Beziehungsring und Stimmung.
