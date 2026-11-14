@@ -55,6 +55,8 @@ final class Abspieler {
     static let shared = Abspieler()
     var aktuell: String?
     var fortschritt: Double = 0
+    /// Wird aufgerufen, wenn eine Datei zu Ende gespielt hat (Vorlesen: nächste Nachricht).
+    var beiEnde: (() -> Void)?
     private var spieler: AVAudioPlayer?
     private var uhr: Timer?
 
@@ -71,14 +73,14 @@ final class Abspieler {
             spieler = p; aktuell = pfad; fortschritt = 0
             uhr = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 guard let self, let s = self.spieler, s.duration > 0 else { return }
-                if !s.isPlaying { self.stopp(); return }          // zu Ende gespielt
+                if !s.isPlaying { let f = self.beiEnde; self.stopp(); f?(); return }          // zu Ende gespielt
                 self.fortschritt = s.currentTime / s.duration
             }
         } catch { stopp() }
     }
 
     func stopp() {
-        spieler?.stop(); spieler = nil; aktuell = nil; fortschritt = 0
+        spieler?.stop(); spieler = nil; aktuell = nil; fortschritt = 0; beiEnde = nil
         uhr?.invalidate(); uhr = nil
     }
 }

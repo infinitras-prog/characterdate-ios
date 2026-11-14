@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import PhotosUI
 
 struct ChatListe: View {
@@ -58,7 +59,16 @@ struct ChatAnsicht: View {
     @State private var anruf = false
     @State private var mitVideo = false
     @State private var keineStimme = false
+    @State private var vorlesen = false
+    @State private var stimmeWaehlen = false
+    @State private var stimmeFrage: URL?
+    @State private var stimmeLaedt = false
+    @State private var schlange: [String] = []
+    @State private var liest: String?
+    @State private var amEnde = true
+    @State private var neuUnten = 0
     @FocusState private var fokus: Bool
+    private var vorleseSchluessel: String { "vorlesen-\(charId)" }
 
     var c: Charakter? { v.charaktere.first { $0.id == charId } }
 
@@ -87,6 +97,9 @@ struct ChatAnsicht: View {
                             }.id("tippt")
                         }
                         if let fehler { Text(fehler).font(.footnote).foregroundStyle(Farbe.rose).padding(8) }
+                        Color.clear.frame(height: 1).id("ende")
+                            .onAppear { amEnde = true; neuUnten = 0 }
+                            .onDisappear { amEnde = false }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .animation(.spring(response: 0.42, dampingFraction: 0.78), value: nachrichten.count)
@@ -94,8 +107,37 @@ struct ChatAnsicht: View {
                 }
                 .sensoryFeedback(.impact(weight: .light), trigger: nachrichten.count)
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: nachrichten.count) { _, _ in withAnimation { leser.scrollTo(nachrichten.last?.id, anchor: .bottom) } }
-                .onChange(of: tippt) { _, an in if an { withAnimation { leser.scrollTo("tippt", anchor: .bottom) } } }
+                .onChange(of: nachrichten.count) { _, _ in
+                    // nur mitscrollen, wenn du unten bist oder selbst geschrieben hast – sonst zählt der Pfeil mit
+                    if amEnde || nachrichten.last?.vonMir == true { withAnimation { leser.scrollTo("ende", anchor: .bottom) } }
+                    else { neuUnten += 1 }
+                }
+                .onChange(of: tippt) { _, an in if an && amEnde { withAnimation { leser.scrollTo("ende", anchor: .bottom) } } }
+                .overlay(alignment: .bottom) {
+                    if !amEnde {
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { leser.scrollTo("ende", anchor: .bottom) }
+                            neuUnten = 0
+                        } label: {
+                            Image(systemName: "chevron.down").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(Farbe.linie, lineWidth: 1))
+                                .overlay(alignment: .topTrailing) {
+                                    if neuUnten > 0 {
+                                        Text("\(neuUnten)").font(.caption2.bold()).foregroundStyle(.white)
+                                            .padding(.horizontal, 5).frame(minWidth: 19, minHeight: 19)
+                                            .background(Farbe.rose, in: Capsule()).offset(x: 5, y: -5)
+                                    }
+                                }
+                                .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+                        }
+                        .accessibilityLabel("Ans Ende des Chats")
+                        .padding(.bottom, 10)
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: amEnde)
             }
             eingabe
         }
@@ -116,6 +158,21 @@ struct ChatAnsicht: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 14) {
+                    Button {
+                        if c?.hatStimme != true { keineStimme = true; return }
+                        vorlesen.toggle(); UserDefaults.standard.set(vorlesen, forKey: vorleseSchluessel)
+                        if !vorlesen { leiseStellen() }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: { Image(systemName: vorlesen ? "speaker.wave.2.fill" : "speaker.slash") }
+                        .foregroundStyle(vorlesen ? Farbe.rose : Farbe.text2)
+                        .accessibilityLabel(vorlesen ? "Vorlesen aus" : "Nachrichten vorlesen")
+                        .disabled(c == nil || v.zustand != .verbunden)
+                    Menu {
+                        Button { stimmeWaehlen = true } label: {
+                            Label(c?.hatStimme == true ? "Neue Stimmprobe hochladen" : "Stimmprobe hochladen", systemImage: "waveform.badge.plus")
+                        }
+                    } label: { Image(systemName: stimmeLaedt ? "hourglass" : "ellipsis.circle") }
+                        .disabled(c == nil || v.zustand != .verbunden || stimmeLaedt)
                     Button { if c?.hatStimme == true { mitVideo = true; anruf = true } else { keineStimme = true } } label: { Image(systemName: "video.fill") }
                         .accessibilityLabel("Videoanruf")
                         .disabled(c == nil || c?.avatarUrl == nil || v.zustand != .verbunden)
@@ -127,16 +184,33 @@ struct ChatAnsicht: View {
         }
         .fullScreenCover(isPresented: $anruf) { if let c { AnrufAnsicht(c: c, video: mitVideo) } }
         .alert("Noch keine Stimme", isPresented: $keineStimme) {
+            Button("Stimmprobe hochladen") { stimmeWaehlen = true }
             Button("OK", role: .cancel) {}
         } message: {
-            Text("\(c?.name ?? "Sie") hat noch keine Stimme. Richte sie am PC im Editor unter „Stimme“ ein – dann kannst du sie anrufen.")
+            Text("\(c?.name ?? "Sie") hat noch keine Stimme. Lade eine Stimmprobe hoch (MP3, WAV oder FLAC, bis 30 Sekunden) oder richte sie am PC im Editor ein – dann kannst du sie anrufen und dir ihre Nachrichten vorlesen lassen.")
         }
-        .task { await laden() }
+        .fileImporter(isPresented: $stimmeWaehlen, allowedContentTypes: [.mp3, .wav, .audio, UTType(filenameExtension: "flac") ?? .audio]) { r in
+            if case .success(let url) = r { stimmeFrage = url }
+        }
+        .confirmationDialog("Stimme übernehmen?", isPresented: Binding(get: { stimmeFrage != nil }, set: { if !$0 { stimmeFrage = nil } }), titleVisibility: .visible) {
+            Button("Ja, die Stimme stammt von mir, einer erfundenen Figur oder einer Person, die zugestimmt hat") {
+                if let u = stimmeFrage { Task { await stimmeHochladen(u) } }
+            }
+            Button("Abbrechen", role: .cancel) { stimmeFrage = nil }
+        } message: {
+            Text("Bis zu 30 Sekunden klare Sprache ohne Musik werden genutzt – je länger, desto genauer wird die Stimme kopiert.")
+        }
+        .task { vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true; await laden() }
         .onAppear {
             abo = v.abonnieren { e in
                 guard e.charId == charId else { if e.typ == "verbunden" { Task { await laden() } }; return }
                 switch e.typ {
-                case "nachricht": if let n = e.nachricht, !nachrichten.contains(where: { $0.id == n.id }) { nachrichten.append(n) }
+                case "nachricht":
+                    if let n = e.nachricht, !nachrichten.contains(where: { $0.id == n.id }) {
+                        nachrichten.append(n)
+                        if vorlesen && !n.vonMir && n.art == "text" && n.m("imAnruf") == nil
+                            && !n.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { vorlesenLassen(n.id) }
+                    }
                 case "aktualisiert": if let n = e.nachricht, let i = nachrichten.firstIndex(where: { $0.id == n.id }) { nachrichten[i] = n }
                 case "gelesen": gelesenBis = e.roh["bis"] as? Double ?? gelesenBis
                 case "tippt": tippt = e.roh["an"] as? Bool ?? false; tipptArt = e.roh["art"] as? String ?? "text"
@@ -145,7 +219,7 @@ struct ChatAnsicht: View {
                 }
             }
         }
-        .onDisappear { if let abo { v.abbestellen(abo) } }
+        .onDisappear { if let abo { v.abbestellen(abo) }; leiseStellen() }
         .onChange(of: foto) { _, neu in if let neu { Task { await fotoSenden(neu) } } }
         .fullScreenCover(item: $gross) { b in BildVollbild(bild: b) }
     }
@@ -181,7 +255,7 @@ struct ChatAnsicht: View {
             if !ich && m.m("status")?.text == "entsteht" {
                 VStack(spacing: 8) {
                     ProgressView().tint(.white)
-                    Text(m.m("art")?.text == "aenderung" ? "📷 Foto wird geändert …" : "📷 Foto wird aufgenommen …").font(.footnote)
+                    Text(m.m("kritik") != nil ? "📷 Neuer Versuch – diesmal anders …" : m.m("art")?.text == "aenderung" ? "📷 Foto wird geändert …" : "📷 Foto wird aufgenommen …").font(.footnote)
                     Text("beim ersten Foto bis zu 2 Min.").font(.caption2).foregroundStyle(Farbe.text3)
                 }
                     .frame(width: 220, height: 290).background(Farbe.verlauf.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 18))
@@ -217,7 +291,16 @@ struct ChatAnsicht: View {
             }
             .padding(.horizontal, 13).padding(.vertical, 8)
             .background(blasenGrund(ich), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(ich ? Color.clear : Farbe.linie, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(liest == m.id ? Farbe.rose : (ich ? Color.clear : Farbe.linie), lineWidth: liest == m.id ? 1.5 : 1))
+            .contextMenu {
+                if !ich && c?.hatStimme == true {
+                    Button { if liest == m.id { leiseStellen() } else { leiseStellen(); vorlesenLassen(m.id) } } label: {
+                        Label(liest == m.id ? "Vorlesen stoppen" : "Vorlesen", systemImage: liest == m.id ? "speaker.slash" : "speaker.wave.2")
+                    }
+                }
+                Button { UIPasteboard.general.string = m.text } label: { Label("Kopieren", systemImage: "doc.on.doc") }
+            }
         }
     }
 
@@ -260,6 +343,53 @@ struct ChatAnsicht: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(.ultraThinMaterial.opacity(0.6))
+    }
+
+    // MARK: Vorlesen (ihre Stimme)
+
+    @MainActor
+    private func vorlesenLassen(_ mid: String) {
+        schlange.append(mid)
+        if liest == nil { Task { await naechsteVorlesen() } }
+    }
+
+    @MainActor
+    private func leiseStellen() {
+        schlange.removeAll(); liest = nil
+        if Abspieler.shared.beiEnde != nil || Abspieler.shared.aktuell?.contains("/vorlesen/") == true { Abspieler.shared.stopp() }
+    }
+
+    @MainActor
+    private func naechsteVorlesen() async {
+        guard liest == nil, !schlange.isEmpty else { return }
+        let mid = schlange.removeFirst()
+        liest = mid
+        struct Antwort: Decodable { let url: String }
+        do {
+            let r: Antwort = try await v.anfrage("/api/nachrichten/\(mid)/vorlesen", methode: "POST", zeit: 180)
+            guard liest == mid else { return }                       // inzwischen gestoppt
+            await Abspieler.shared.umschalten(r.url, v: v)
+            if Abspieler.shared.aktuell == nil { liest = nil; await naechsteVorlesen(); return }
+            Abspieler.shared.beiEnde = { Task { @MainActor in liest = nil; await naechsteVorlesen() } }
+        } catch {
+            liest = nil; schlange.removeAll(); fehler = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func stimmeHochladen(_ url: URL) async {
+        stimmeFrage = nil; stimmeLaedt = true; fehler = nil
+        defer { stimmeLaedt = false }
+        let zugriff = url.startAccessingSecurityScopedResource()
+        defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
+        guard let d = try? Data(contentsOf: url) else { fehler = "Die Datei konnte nicht gelesen werden."; return }
+        let endung = url.pathExtension.lowercased()
+        do {
+            let _: Charakter = try await v.hochladen("/api/charaktere/\(charId)/stimme/klonen", datei: d, name: "probe.\(endung.isEmpty ? "mp3" : endung)",
+                                                     typ: "audio/\(endung == "mp3" ? "mpeg" : endung)", felder: ["einverstanden": "true", "sprache": "de"])
+            await v.neuLaden()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch { fehler = error.localizedDescription }
     }
 
     // MARK: Aktionen
