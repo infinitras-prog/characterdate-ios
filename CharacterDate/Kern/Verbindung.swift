@@ -80,8 +80,10 @@ final class Verbindung {
     @MainActor
     func verbinden() async {
         guard gekoppelt else { zustand = .nichtGekoppelt; return }
+        // Während eines Anrufs nie neu verbinden: das würde Adresse und Liste kurz leeren und den Anruf beenden
+        if Telefon.laeuft { return }
+        let alteBasis = basis
         zustand = .verbindet
-        basis = nil
         let liste = adressen
         let s = sitzung
         let gefunden: URL? = await withTaskGroup(of: URL?.self, returning: URL?.self) { gruppe in
@@ -99,8 +101,8 @@ final class Verbindung {
             }
             return nil
         }
-        basis = gefunden
-        guard basis != nil else {
+        basis = gefunden ?? alteBasis
+        guard gefunden != nil else {
             zustand = .offline("Dein PC ist gerade nicht erreichbar. Läuft CharacterDate mit eingeschaltetem Fernzugriff?")
             return
         }

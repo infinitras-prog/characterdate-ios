@@ -111,7 +111,12 @@ struct AnrufAnsicht: View {
                 withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
             }
         }
-        .onDisappear { if telefon.zustand != .beendet { telefon.beenden() } }
+        .onDisappear {
+            if telefon.zustand != .beendet {
+                telefon.melden("Anrufbildschirm verschwand, während der Anruf noch lief (Zustand \(telefon.zustand))")
+                telefon.beenden()
+            }
+        }
         .onChange(of: telefon.zustand) { _, z in
             if z == .beendet {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)

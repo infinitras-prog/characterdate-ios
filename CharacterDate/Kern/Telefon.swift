@@ -10,6 +10,8 @@ import UIKit
 /// (grüne Anzeige, Sperrbildschirm, Bluetooth); klappt CallKit nicht (z. B. im Simulator), läuft es ohne.
 @Observable
 final class Telefon {
+    /// Läuft gerade irgendein Anruf? (Dann verbindet die App nicht neu und sperrt nicht.)
+    nonisolated(unsafe) static var laeuft = false
     enum Zustand: String { case waehlt, klingelt, aktiv, beendet }
 
     var zustand: Zustand = .waehlt
@@ -40,6 +42,7 @@ final class Telefon {
 
     @MainActor
     func starten(_ v: Verbindung, char: Charakter) {
+        Telefon.laeuft = true
         verbindung = v
         charId = char.id
         let id = UUID()
@@ -92,6 +95,7 @@ final class Telefon {
 
     @MainActor
     func beenden(grund g: String? = nil) {
+        Telefon.laeuft = false
         if let g, grund == nil { grund = g }
         if zustand != .beendet {
             let dauer = start.map { Int(Date().timeIntervalSince($0)) } ?? 0
@@ -382,6 +386,7 @@ final class Zentrale: NSObject, CXProviderDelegate {
 
     // CXProviderDelegate (läuft auf der Hauptschlange)
     func providerDidReset(_ provider: CXProvider) {
+        telefon?.melden("CallKit: providerDidReset (System hat alle Anrufe zurückgesetzt)")
         aktiv = false
         MainActor.assumeIsolated { telefon?.beenden() }
     }
@@ -394,6 +399,7 @@ final class Zentrale: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        telefon?.melden("CallKit: Auflegen ausgelöst (Knopf, Sperrtaste oder System), Zustand vorher \(String(describing: telefon?.zustand))")
         aktiv = false
         MainActor.assumeIsolated { telefon?.beenden() }
         action.fulfill()
@@ -405,10 +411,12 @@ final class Zentrale: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        telefon?.melden("CallKit: Audio-Sitzung aktiv")
         telefon?.audioStarten()
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        telefon?.melden("CallKit: Audio-Sitzung deaktiviert")
         telefon?.audioStoppen()
     }
 }

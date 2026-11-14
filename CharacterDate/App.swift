@@ -26,8 +26,8 @@ struct CharacterDateApp: App {
             .tint(Farbe.rose)
             .task { if verbindung.gekoppelt { await verbindung.verbinden() } }
             .onChange(of: phase) { _, neu in
-                if neu == .background { gesperrt = true }
-                if neu == .active, verbindung.gekoppelt, verbindung.zustand != .verbunden {
+                if neu == .background, !Telefon.laeuft { gesperrt = true }      // im Anruf nicht sperren
+                if neu == .active, verbindung.gekoppelt, verbindung.zustand != .verbunden, !Telefon.laeuft {
                     Task { await verbindung.verbinden() }
                 }
             }

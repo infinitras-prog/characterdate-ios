@@ -57,6 +57,7 @@ struct ChatAnsicht: View {
     @State private var abo: UUID?
     @State private var rekorder = Rekorder()
     @State private var anruf = false
+    @State private var anrufMit: Charakter?       // fest beim Wählen gemerkt – unabhängig davon, ob die Liste kurz neu lädt
     @State private var mitVideo = false
     @State private var keineStimme = false
     @State private var vorlesen = false
@@ -175,16 +176,16 @@ struct ChatAnsicht: View {
                         }
                     } label: { Image(systemName: stimmeLaedt ? "hourglass" : "ellipsis.circle") }
                         .disabled(c == nil || v.zustand != .verbunden || stimmeLaedt)
-                    Button { if c?.hatStimme == true { mitVideo = true; anruf = true } else { keineStimme = true } } label: { Image(systemName: "video.fill") }
+                    Button { if c?.hatStimme == true { mitVideo = true; anrufMit = c; anruf = true } else { keineStimme = true } } label: { Image(systemName: "video.fill") }
                         .accessibilityLabel("Videoanruf")
                         .disabled(c == nil || c?.avatarUrl == nil || v.zustand != .verbunden)
-                    Button { if c?.hatStimme == true { mitVideo = false; anruf = true } else { keineStimme = true } } label: { Image(systemName: "phone.fill") }
+                    Button { if c?.hatStimme == true { mitVideo = false; anrufMit = c; anruf = true } else { keineStimme = true } } label: { Image(systemName: "phone.fill") }
                         .accessibilityLabel("Anrufen")
                         .disabled(c == nil || v.zustand != .verbunden)
                 }
             }
         }
-        .fullScreenCover(isPresented: $anruf) { if let c { AnrufAnsicht(c: c, video: mitVideo) } }
+        .fullScreenCover(isPresented: $anruf) { if let a = anrufMit ?? c { AnrufAnsicht(c: a, video: mitVideo) } }
         .alert("Noch keine Stimme", isPresented: $keineStimme) {
             Button("Stimmprobe hochladen") { stimmeWaehlen = true }
             Button("OK", role: .cancel) {}
