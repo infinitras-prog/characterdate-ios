@@ -242,6 +242,13 @@ struct ChatVideo: View {
                 VideoPlayer(player: spieler)
                     .onAppear { spieler.isMuted = !ton; spieler.play() }
                     .onDisappear { spieler.pause() }
+                    .overlay(alignment: .bottomTrailing) {
+                        // Videobotschaften haben Ton: antippen schaltet ihn an/aus
+                        Button { ton.toggle(); spieler.isMuted = !ton; if ton { spieler.seek(to: .zero); spieler.play() } } label: {
+                            Image(systemName: ton ? "speaker.wave.2.fill" : "speaker.slash.fill").font(.caption)
+                                .padding(8).background(.black.opacity(0.5), in: Circle()).foregroundStyle(.white)
+                        }.padding(8)
+                    }
             } else {
                 Color.white.opacity(0.06); ProgressView().tint(.white)
             }

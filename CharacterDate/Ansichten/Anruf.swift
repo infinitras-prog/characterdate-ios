@@ -95,11 +95,11 @@ struct AnrufAnsicht: View {
         .task {
             guard video else { return }
             // Echte Bewegungen: Clips zur Szene (falls schon gedreht) – sonst lebendes Standbild
-            struct ClipListe: Decodable { let clips: [String: String] }
+            struct ClipListe: Decodable { let clips: [String: String]; let varianten: [String: [String]]? }
             if let l: ClipListe = try? await v.anfrage("/api/charaktere/\(c.id)/anrufclips?format=hoch"), l.clips["ruhe"] != nil {
                 clips.sieRedet = { [t = telefon] in t.pegelSie > 0.05 }
                 clips.duRedest = { [t = telefon] in t.pegelDu > 0.05 }
-                await clips.laden(v, clips: l.clips)
+                await clips.laden(v, clips: l.varianten ?? l.clips.mapValues { [$0] })
             }
             // Szenenbild 9:16: dort, wo sie laut Chat gerade ist – sonst erst das Profilbild
             struct Szene: Decodable { let url: String?; let ort: String? }

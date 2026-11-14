@@ -8,7 +8,8 @@ import SwiftUI
 final class ClipSpieler {
     var bereit = false
     @ObservationIgnored let spieler = AVQueuePlayer()
-    @ObservationIgnored private var dateien: [String: URL] = [:]
+    @ObservationIgnored private var dateien: [String: [URL]] = [:]
+    @ObservationIgnored private var letzteDatei: URL?
     @ObservationIgnored var sieRedet: () -> Bool = { false }
     @ObservationIgnored var duRedest: () -> Bool = { false }
     @ObservationIgnored var lachenBis = Date.distantPast
@@ -16,14 +17,16 @@ final class ClipSpieler {
     @ObservationIgnored private var beobachter: NSObjectProtocol?
 
     @MainActor
-    func laden(_ v: Verbindung, clips: [String: String]) async {
-        for (name, url) in clips {
-            guard let d = try? await v.medien(url) else { continue }
-            let datei = FileManager.default.temporaryDirectory.appendingPathComponent("anrufclip_\(name)_\(abs(url.hashValue)).mp4")
-            try? d.write(to: datei)
-            dateien[name] = datei
+    func laden(_ v: Verbindung, clips: [String: [String]]) async {
+        for (name, urls) in clips {
+            for url in urls {
+                guard let d = try? await v.medien(url) else { continue }
+                let datei = FileManager.default.temporaryDirectory.appendingPathComponent("anrufclip_\(abs(url.hashValue)).mp4")
+                try? d.write(to: datei)
+                dateien[name, default: []].append(datei)
+            }
         }
-        guard dateien["ruhe"] != nil else { return }
+        guard !(dateien["ruhe"] ?? []).isEmpty else { return }
         spieler.isMuted = true
         spieler.actionAtItemEnd = .advance
         anhaengen(); anhaengen()
@@ -36,7 +39,7 @@ final class ClipSpieler {
 
     /// Nächsten Clip anhängen – zur aktuellen Lage passend (es liegen immer ~2 in der Schlange → keine Lücke).
     private func anhaengen() {
-        let hat = { (n: String) in self.dateien[n] != nil }
+        let hat = { (n: String) in !(self.dateien[n] ?? []).isEmpty }
         var name = "ruhe"
         if Date() < lachenBis, hat("lachen") { name = "lachen"; lachenBis = .distantPast }
         else if sieRedet(), hat("reden") { name = "reden" }
@@ -46,7 +49,15 @@ final class ClipSpieler {
             for (n, p) in [("laecheln", 0.12), ("nachdenken", 0.08), ("haare", 0.06)] where hat(n) && n != letzter && r < p { name = n; break }
         }
         letzter = name
-        if let u = dateien[name] { spieler.insert(AVPlayerItem(url: u), after: nil) }
+        // Variante zufällig, nie dieselbe Datei zweimal hintereinander; Tempo leicht verschieden
+        var liste = dateien[name] ?? dateien["ruhe"] ?? []
+        if liste.count > 1 { liste.removeAll { $0 == letzteDatei } }
+        guard let u = liste.randomElement() else { return }
+        letzteDatei = u
+        let item = AVPlayerItem(url: u)
+        item.audioTimePitchAlgorithm = .timeDomain
+        spieler.insert(item, after: nil)
+        spieler.rate = Float.random(in: 0.92...1.08)
     }
 
     func stoppen() {
