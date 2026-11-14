@@ -3,17 +3,19 @@
 Native SwiftUI-App (iOS 17+). Die KI läuft auf deinem PC. Das iPhone verbindet sich im Heimnetz oder über
 Tailscale und zeigt Chats, Fotos und Sprachnachrichten an.
 
-## Was die App kann (Version 0.4.0)
+## Was die App kann (Version 0.4.1)
 
 - Mit dem PC koppeln: QR-Code scannen. Der Schlüssel liegt im iOS-Schlüsselbund und wird nur als Header gesendet.
 - Home mit Charakterkarten, Beziehungsring und Stimmung.
 - Chats mit Lesebestätigung, Tippanzeige, Fotos (senden und empfangen), Sprachnachrichten (aufnehmen und abspielen)
   und Telefonat-Einträgen.
+- Anrufen mit echter Stimme: Telefon-Knopf oben im Chat. Läuft über CallKit (grüne Anzeige, Sperrbildschirm,
+  Bluetooth), mit Echo-Unterdrückung, Freizeichen, Untertiteln, Stumm und Lautsprecher. Dazwischenreden unterbricht sie.
 - Charakter aus Beschreibung erstellen, optional mit Referenzbild.
 - Galerie mit Filtern.
 - Face ID als Sperre, Entkoppeln.
 
-Noch nicht dabei (nächste Schritte): Anrufe am iPhone mit CallKit, Mitteilungen per Push, Widgets.
+Noch nicht dabei (nächste Schritte): Sie ruft dich an (braucht Push), Mitteilungen per Push, Widgets.
 
 ## Bauen ohne Mac (GitHub Actions)
 

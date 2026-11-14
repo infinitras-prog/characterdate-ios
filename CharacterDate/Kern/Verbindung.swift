@@ -200,6 +200,19 @@ final class Verbindung {
     }
     func abbestellen(_ id: UUID) { hoerer[id] = nil }
 
+    /// WebSocket für ein Telefonat (Schlüssel im Header).
+    func anrufSocket(_ charId: String) -> URLSessionWebSocketTask? {
+        guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return nil }
+        teile.scheme = teile.scheme == "https" ? "wss" : "ws"
+        teile.path = "/ws/anruf/\(charId)"
+        guard let url = teile.url else { return nil }
+        var r = URLRequest(url: url)
+        if let k = schluessel { r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization") }
+        let s = sitzung.webSocketTask(with: r)
+        s.maximumMessageSize = 4 * 1024 * 1024
+        return s
+    }
+
     private func ereignisseStarten() {
         socket?.cancel()
         guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return }

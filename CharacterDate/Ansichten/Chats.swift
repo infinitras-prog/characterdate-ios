@@ -55,6 +55,7 @@ struct ChatAnsicht: View {
     @State private var gross: String?
     @State private var abo: UUID?
     @State private var rekorder = Rekorder()
+    @State private var anruf = false
     @FocusState private var fokus: Bool
 
     var c: Charakter? { v.charaktere.first { $0.id == charId } }
@@ -108,7 +109,13 @@ struct ChatAnsicht: View {
                     }
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { anruf = true } label: { Image(systemName: "phone.fill") }
+                    .accessibilityLabel("Anrufen")
+                    .disabled(c == nil || v.zustand != .verbunden)
+            }
         }
+        .fullScreenCover(isPresented: $anruf) { if let c { AnrufAnsicht(c: c) } }
         .task { await laden() }
         .onAppear {
             abo = v.abonnieren { e in
