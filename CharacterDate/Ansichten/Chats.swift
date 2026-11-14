@@ -52,7 +52,7 @@ struct ChatAnsicht: View {
     @State private var text = ""
     @State private var fehler: String?
     @State private var foto: PhotosPickerItem?
-    @State private var gross: String?
+    @State private var gross: GrossesBild?
     @State private var abo: UUID?
     @State private var rekorder = Rekorder()
     @State private var anruf = false
@@ -147,14 +147,7 @@ struct ChatAnsicht: View {
         }
         .onDisappear { if let abo { v.abbestellen(abo) } }
         .onChange(of: foto) { _, neu in if let neu { Task { await fotoSenden(neu) } } }
-        .fullScreenCover(item: Binding(get: { gross.map { GrossesBild(pfad: $0) } }, set: { gross = $0?.pfad })) { b in
-            ZStack(alignment: .topTrailing) {
-                Color.black.ignoresSafeArea()
-                NetzBild(pfad: b.pfad, modus: .fit)
-                Button { gross = nil } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle) }
-                    .foregroundStyle(.white.opacity(0.85)).padding()
-            }
-        }
+        .fullScreenCover(item: $gross) { b in BildVollbild(bild: b) }
     }
 
     // MARK: Zeilen
@@ -186,7 +179,11 @@ struct ChatAnsicht: View {
         switch m.art {
         case "bild":
             if !ich && m.m("status")?.text == "entsteht" {
-                VStack(spacing: 8) { ProgressView().tint(.white); Text("📷 Foto wird aufgenommen …").font(.footnote) }
+                VStack(spacing: 8) {
+                    ProgressView().tint(.white)
+                    Text(m.m("art")?.text == "aenderung" ? "📷 Foto wird geändert …" : "📷 Foto wird aufgenommen …").font(.footnote)
+                    Text("beim ersten Foto bis zu 2 Min.").font(.caption2).foregroundStyle(Farbe.text3)
+                }
                     .frame(width: 220, height: 290).background(Farbe.verlauf.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 18))
             } else if let pfad = m.m("bild")?.text {
                 VStack(alignment: .leading, spacing: 0) {
@@ -200,7 +197,7 @@ struct ChatAnsicht: View {
                 .frame(width: 230)
                 .background(Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .onTapGesture { gross = pfad }
+                .onTapGesture { gross = GrossesBild(pfad: pfad, bildId: m.m("bildId")?.text) }
             } else {
                 Text("📷 Das Foto ist nicht geworden.").font(.footnote).padding(10).glas(16)
             }
@@ -307,7 +304,7 @@ struct ChatAnsicht: View {
     }
 }
 
-struct GrossesBild: Identifiable { let pfad: String; var id: String { pfad } }
+struct GrossesBild: Identifiable { let pfad: String; var bildId: String? = nil; var id: String { pfad } }
 
 struct TippPunkte: View {
     @State private var phase = 0.0

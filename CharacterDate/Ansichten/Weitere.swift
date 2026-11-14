@@ -91,7 +91,7 @@ struct GalerieAnsicht: View {
     @Environment(Verbindung.self) private var v
     @State private var bilder: [Bild] = []
     @State private var art = ""
-    @State private var gross: String?
+    @State private var gross: GrossesBild?
     private let spalten = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
     private let arten: [(String, String)] = [("", "Alle"), ("selfie", "Ihre Fotos"), ("wirfoto", "Unsere"), ("studio", "Studio"), ("von_dir", "Von dir")]
 
@@ -118,7 +118,7 @@ struct GalerieAnsicht: View {
                     ForEach(bilder) { b in
                         NetzBild(pfad: b.url).frame(height: 220).clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .onTapGesture { gross = b.url }
+                            .onTapGesture { gross = GrossesBild(pfad: b.url, bildId: b.id) }
                     }
                 }
             }
@@ -127,14 +127,7 @@ struct GalerieAnsicht: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: art) { await laden() }
         .refreshable { await laden() }
-        .fullScreenCover(item: Binding(get: { gross.map { GrossesBild(pfad: $0) } }, set: { gross = $0?.pfad })) { b in
-            ZStack(alignment: .topTrailing) {
-                Color.black.ignoresSafeArea()
-                NetzBild(pfad: b.pfad, modus: .fit)
-                Button { gross = nil } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle) }
-                    .foregroundStyle(.white.opacity(0.85)).padding()
-            }
-        }
+        .fullScreenCover(item: $gross) { b in BildVollbild(bild: b, geaendert: { Task { await laden() } }) }
     }
 
     @MainActor

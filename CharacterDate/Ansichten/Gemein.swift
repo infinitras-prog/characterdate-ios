@@ -144,3 +144,83 @@ final class Rekorder {
         return try? Data(contentsOf: datei)
     }
 }
+
+/// Vollbild eines Fotos: in die Fotos-Mediathek sichern und gezielt ändern lassen (Flux.2 am PC).
+struct BildVollbild: View {
+    @Environment(Verbindung.self) private var v
+    @Environment(\.dismiss) private var schliessen
+    let bild: GrossesBild
+    var geaendert: (() -> Void)? = nil
+    @State private var pfad: String = ""
+    @State private var bildId: String?
+    @State private var meldung: String?
+    @State private var aendernOffen = false
+    @State private var anweisung = ""
+    @State private var arbeitet = false
+
+    private struct NeuesBild: Decodable { let id: String; let url: String }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            NetzBild(pfad: pfad.isEmpty ? bild.pfad : pfad, modus: .fit).id(pfad)
+            if arbeitet {
+                VStack(spacing: 10) { ProgressView().tint(.white); Text("Foto wird geändert …").font(.footnote) }
+                    .padding(18).glas()
+            }
+            VStack {
+                HStack {
+                    Spacer()
+                    Button { schliessen() } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle) }
+                        .foregroundStyle(.white.opacity(0.85)).padding()
+                }
+                Spacer()
+                if let meldung { Text(meldung).font(.footnote).padding(10).glas(14).padding(.bottom, 6) }
+                HStack(spacing: 12) {
+                    Button { Task { await sichern() } } label: { Label("In Fotos sichern", systemImage: "square.and.arrow.down") }
+                        .buttonStyle(HauptKnopf())
+                    if bildId != nil {
+                        Button { aendernOffen = true } label: { Label("Ändern", systemImage: "wand.and.stars") }
+                            .buttonStyle(HauptKnopf(farbe: AnyShapeStyle(Color.white.opacity(0.18))))
+                    }
+                }
+                .disabled(arbeitet)
+                .padding(.bottom, 24)
+            }
+        }
+        .onAppear { pfad = bild.pfad; bildId = bild.bildId }
+        .alert("Was soll anders sein?", isPresented: $aendernOffen) {
+            TextField("z. B. rote Haare, am Strand", text: $anweisung)
+            Button("Ändern") { Task { await aendern() } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Alles andere bleibt gleich. Das Original bleibt erhalten.")
+        }
+    }
+
+    @MainActor
+    private func sichern() async {
+        do {
+            let d = try await v.medien(pfad.isEmpty ? bild.pfad : pfad)
+            guard let img = UIImage(data: d) else { throw Verbindung.Fehler.text("Bild nicht lesbar.") }
+            UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            meldung = "In deinen Fotos gesichert."
+        } catch { meldung = error.localizedDescription }
+    }
+
+    @MainActor
+    private func aendern() async {
+        guard let id = bildId, anweisung.trimmingCharacters(in: .whitespaces).count >= 3 else { return }
+        arbeitet = true; meldung = nil
+        defer { arbeitet = false }
+        do {
+            struct Anfrage: Encodable { let anweisung: String }
+            let neu: NeuesBild = try await v.anfrage("/api/bilder/\(id)/aendern", methode: "POST",
+                                                      body: Anfrage(anweisung: anweisung), zeit: 600)
+            pfad = neu.url; bildId = neu.id; anweisung = ""
+            meldung = "Geändert – auch in der Galerie."
+            geaendert?()
+        } catch { meldung = error.localizedDescription }
+    }
+}

@@ -3,7 +3,7 @@
 Native SwiftUI-App (iOS 17+). Die KI läuft auf deinem PC. Das iPhone verbindet sich im Heimnetz oder über
 Tailscale und zeigt Chats, Fotos und Sprachnachrichten an.
 
-## Was die App kann (Version 0.7.1)
+## Was die App kann (Version 0.7.2)
 
 - Mit dem PC koppeln: QR-Code scannen. Der Schlüssel liegt im iOS-Schlüsselbund und wird nur als Header gesendet.
 - Home mit Charakterkarten, Beziehungsring und Stimmung.
@@ -14,7 +14,7 @@ Tailscale und zeigt Chats, Fotos und Sprachnachrichten an.
   Bluetooth), mit Echo-Unterdrückung, Freizeichen, Untertiteln, Stumm und Lautsprecher. Dazwischenreden unterbricht sie.
 - Animierter Startbildschirm mit Glas-Herz (Herzschlag, Lichtstrahlen, Partikelring, Blitz + Name, drei Herzschläge als Haptik), lebendiger Hintergrund, Herzschlag-Logo, federnde Karten und Nachrichten, Haptik.
 - Charakter aus Beschreibung erstellen, optional mit Referenzbild.
-- Galerie mit Filtern.
+- Galerie mit Filtern. Fotos in die Mediathek sichern und gezielt ändern lassen („Ändern“ im Vollbild).
 - Face ID als Sperre, Entkoppeln.
 
 Noch nicht dabei (nächste Schritte): Sie ruft dich an (braucht Push), Mitteilungen per Push, Widgets.
