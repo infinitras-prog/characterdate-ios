@@ -1,0 +1,155 @@
+# CharacterDate AI für iPhone – Cloud-Build auf einem Mac von GitHub (kein eigener Mac nötig)
+#
+# 1) »Prüfen« läuft bei jedem Hochladen: baut die App ohne Signatur und zeigt, ob der Code fehlerfrei ist.
+# 2) »TestFlight« startest du von Hand (Actions → iOS → Run workflow → testflight = true):
+#    signiert mit deinem App-Store-Connect-Schlüssel und lädt die App zu TestFlight hoch.
+#    Benötigte Secrets (Settings → Secrets and variables → Actions) – dieselben wie bei NitraX:
+#      APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Zu TestFlight hochladen"
+        type: boolean
+        default: true
+      mac:
+        description: "Mac-Typ (bei GitHub-Engpass: macos-26, macos-15, macos-15-intel)"
+        type: string
+        default: macos-26
+
+concurrency:
+  group: ios-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  pruefen:
+    name: Prüfen (ohne Signatur)
+    if: github.event_name == 'push' || !inputs.testflight
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Neuestes Xcode wählen
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: XcodeGen installieren
+        run: brew install xcodegen
+      - name: Projekt erzeugen
+        run: xcodegen generate
+      - name: Bauen (Simulator, ohne Signatur)
+        run: |
+          set -o pipefail
+          xcodebuild -project CharacterDate.xcodeproj -scheme CharacterDate -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tee build.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Protokoll bei Fehler
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+  testflight:
+    name: TestFlight
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    runs-on: ${{ inputs.mac || 'macos-26' }}
+    timeout-minutes: 60
+    env:
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secrets prüfen
+        env:
+          K: ${{ secrets.ASC_KEY_ID }}
+          I: ${{ secrets.ASC_ISSUER_ID }}
+          P: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          for v in DEVELOPMENT_TEAM K I P; do
+            if [ -z "${!v}" ]; then echo "::error::Secret fehlt ($v) – siehe LIESMICH.md"; exit 1; fi
+          done
+      - name: Neuestes Xcode wählen
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: iOS-SDK prüfen (mindestens 26, sonst lehnt Apple ab)
+        run: |
+          v=$(xcrun --sdk iphoneos --show-sdk-version | cut -d. -f1)
+          echo "iOS-SDK $(xcrun --sdk iphoneos --show-sdk-version)"
+          if [ "$v" -lt 26 ]; then echo "::error::Auf diesem Mac-Typ gibt es kein iOS-26-SDK"; exit 1; fi
+      - name: XcodeGen installieren
+        run: brew install xcodegen
+      - name: Projekt erzeugen
+        run: xcodegen generate
+      - name: API-Schlüssel ablegen
+        env:
+          P: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$P" > "$RUNNER_TEMP/keys/AuthKey.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+      - name: Signatur einrichten (Zertifikat + App-Store-Profil über die API)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          python3 -m pip install --quiet --break-system-packages "pyjwt[crypto]" || python3 -m pip install --quiet "pyjwt[crypto]"
+          python3 ci/signieren.py einrichten
+      - name: Archivieren (manuell signiert)
+        run: |
+          set -o pipefail
+          xcodebuild -project CharacterDate.xcodeproj -scheme CharacterDate -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            MARKETING_VERSION="$(tr -d '[:space:]' < VERSION)" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $NX_KEYCHAIN" \
+            NX_PROFIL_APP="$NX_PROFIL_APP" \
+            archive | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
+          grep -q "ARCHIVE SUCCEEDED" archive.log
+      - name: Export-Einstellungen
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>teamID</key><string>${DEVELOPMENT_TEAM}</string>
+            <key>provisioningProfiles</key><dict>
+              <key>de.infinitras.characterdate</key><string>${NX_PROFIL_APP}</string>
+            </dict>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+      - name: Zu TestFlight hochladen
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" | tee export.log
+          grep -qE "EXPORT SUCCEEDED|Upload succeeded|Uploaded" export.log
+      - name: Protokolle bei Fehler
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: |
+            archive.log
+            export.log
+      - name: Schlüssel löschen
+        if: always()
+        run: |
+          python3 ci/signieren.py aufraeumen || true
+          rm -rf "$RUNNER_TEMP/keys"

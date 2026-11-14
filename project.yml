@@ -1,0 +1,54 @@
+# CharacterDate AI für iPhone – Projektbeschreibung für XcodeGen (erzeugt das Xcode-Projekt in der Cloud).
+# Team-ID kommt aus der Umgebung: DEVELOPMENT_TEAM (GitHub-Secret APPLE_TEAM_ID).
+name: CharacterDate
+options:
+  bundleIdPrefix: de.infinitras
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: de
+settings:
+  base:
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.4.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  CharacterDate:
+    type: application
+    platform: iOS
+    sources:
+      - path: CharacterDate
+    info:
+      path: CharacterDate/Info.plist
+      properties:
+        CFBundleDisplayName: CharacterDate
+        CFBundleLocalizations: [de]
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: AccentColor
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+        UIBackgroundModes: [audio]
+        NSCameraUsageDescription: Zum Scannen des Kopplungs-Codes am PC und für Fotos, die du im Chat schickst.
+        NSMicrophoneUsageDescription: Für Sprachnachrichten und Anrufe mit deinen Charakteren.
+        NSPhotoLibraryUsageDescription: Damit du Fotos aus deiner Mediathek im Chat schicken kannst.
+        NSPhotoLibraryAddUsageDescription: Damit du Bilder aus der Galerie in deine Fotos sichern kannst.
+        NSLocalNetworkUsageDescription: CharacterDate verbindet sich mit deinem PC im Heimnetz, auf dem die KI läuft.
+        NSFaceIDUsageDescription: Damit nur du deine Chats öffnen kannst.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        PROVISIONING_PROFILE_SPECIFIER: $(NX_PROFIL_APP)
