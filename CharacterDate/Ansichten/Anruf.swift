@@ -6,6 +6,7 @@ struct AnrufAnsicht: View {
     @Environment(\.dismiss) private var schliessen
     let c: Charakter
     var video = false
+    var eingehend = false
     @State private var telefon = Telefon()
     @State private var puls = false
     @State private var portraet: UIImage?
@@ -106,7 +107,7 @@ struct AnrufAnsicht: View {
         }
         .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten() }
         .onAppear {
-            telefon.starten(v, char: c)
+            telefon.starten(v, char: c, eingehend: eingehend)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
                 withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
             }

@@ -54,7 +54,14 @@ struct Leben: Codable, Hashable {
     var hobbys: [String]?
 }
 
-struct StimmeInfo: Codable, Hashable { var refWav: String? }
+struct StimmeInfo: Codable, Hashable {
+    var refWav: String?
+    var refText: String?
+    var original: String?
+    var originalDauer: Double?
+    var von: Double?
+    var bis: Double?
+}
 
 struct DNA: Codable, Hashable {
     var name: String

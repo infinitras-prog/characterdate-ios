@@ -80,6 +80,7 @@ struct ChatAnsicht: View {
     @State private var stimmeLaedt = false
     @State private var date: DateInfo?
     @State private var dateWahl = false
+    @State private var stimmeBearbeiten = false
     @State private var schlange: [String] = []
     @State private var liest: String?
     @State private var amEnde = true
@@ -193,6 +194,9 @@ struct ChatAnsicht: View {
                             Button { dateWahl = true } label: { Label("Date …", systemImage: "heart.circle") }
                         }
                         Button { Task { await storyJetzt() } } label: { Label("Story jetzt", systemImage: "sparkles") }
+                        if c?.hatStimme == true {
+                            Button { stimmeBearbeiten = true } label: { Label("Stimme bearbeiten", systemImage: "waveform.badge.magnifyingglass") }
+                        }
                         Button { stimmeWaehlen = true } label: {
                             Label(c?.hatStimme == true ? "Neue Stimmprobe hochladen" : "Stimmprobe hochladen", systemImage: "waveform.badge.plus")
                         }
@@ -215,6 +219,7 @@ struct ChatAnsicht: View {
             Text("\(c?.name ?? "Sie") hat noch keine Stimme. Lade eine Stimmprobe hoch (MP3, WAV oder FLAC, bis 30 Sekunden) oder richte sie am PC im Editor ein – dann kannst du sie anrufen und dir ihre Nachrichten vorlesen lassen.")
         }
         .sheet(isPresented: $dateWahl) { if let c { DateWahl(c: c) { d in date = d } } }
+        .sheet(isPresented: $stimmeBearbeiten) { if let c { StimmeBearbeiten(c: c) } }
         .safeAreaInset(edge: .top) {
             if let date {
                 HStack {

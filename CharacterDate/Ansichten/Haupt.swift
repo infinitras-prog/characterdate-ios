@@ -1,9 +1,13 @@
 import SwiftUI
+import AudioToolbox
 
 struct HauptAnsicht: View {
     @Environment(Verbindung.self) private var v
     @State private var tab = 0
     @State private var chatMit: Charakter?
+    @State private var ruft: Klingeln?
+    @State private var angenommen: Klingeln?
+    @State private var abo: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +31,80 @@ struct HauptAnsicht: View {
                     .tabItem { Label("Galerie", systemImage: "photo") }.tag(3)
                 NavigationStack { EinstellungenAnsicht() }
                     .tabItem { Label("Einstellungen", systemImage: "gearshape") }.tag(4)
+            }
+        }
+        .onAppear {
+            abo = v.abonnieren { e in
+                if e.typ == "eingehender_anruf", let cid = e.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
+                    ruft = Klingeln(c: c, video: e.roh["video"] as? Bool ?? false)
+                }
+                if e.typ == "anruf_ende", ruft?.c.id == e.charId { ruft = nil }
+            }
+        }
+        .onDisappear { if let abo { v.abbestellen(abo) } }
+        .fullScreenCover(item: $ruft) { k in
+            KlingelAnsicht(k: k) { video in
+                ruft = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { angenommen = Klingeln(c: k.c, video: video) }
+            } ablehnen: {
+                ruft = nil
+                Task { struct Ok: Decodable { let ok: Bool }; let _: Ok? = try? await v.anfrage("/api/charaktere/\(k.c.id)/anruf/ablehnen", methode: "POST") }
+            }
+        }
+        .fullScreenCover(item: $angenommen) { k in AnrufAnsicht(c: k.c, video: k.video, eingehend: true) }
+    }
+}
+
+struct Klingeln: Identifiable { let c: Charakter; let video: Bool; var id: String { c.id + (video ? "v" : "a") } }
+
+/// SIE ruft an: Vollbild mit pulsierendem Bild, Vibration im Klingel-Rhythmus, annehmen/ablehnen.
+struct KlingelAnsicht: View {
+    let k: Klingeln
+    let annehmen: (Bool) -> Void
+    let ablehnen: () -> Void
+    @State private var puls = false
+
+    var body: some View {
+        ZStack {
+            Hintergrund().ignoresSafeArea()
+            if let a = k.c.avatarUrl { NetzBild(pfad: a).ignoresSafeArea().blur(radius: 40).opacity(0.5).scaleEffect(1.2) }
+            VStack(spacing: 18) {
+                Spacer()
+                Avatar(c: k.c, groesse: 150)
+                    .shadow(color: Farbe.rose.opacity(puls ? 0.7 : 0.2), radius: puls ? 30 : 10)
+                    .scaleEffect(puls ? 1.04 : 1)
+                Text(k.c.name).font(.system(size: 34, weight: .semibold))
+                Text(k.video ? "Videoanruf …" : "ruft dich an …").font(.headline).foregroundStyle(Farbe.text2)
+                Spacer()
+                HStack(spacing: 46) {
+                    knopf("phone.down.fill", farbe: .red, text: "Ablehnen") { ablehnen() }
+                    knopf("phone.fill", farbe: .green, text: "Annehmen") { annehmen(false) }
+                    if k.c.avatarUrl != nil { knopf("video.fill", farbe: .green, text: "Video") { annehmen(true) } }
+                }
+                .padding(.bottom, 50)
+            }
+            .foregroundStyle(.white)
+        }
+        .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { puls = true } }
+        .task {
+            // Klingel-Rhythmus: zweimal kurz vibrieren, Pause – bis angenommen/abgelehnt
+            while !Task.isCancelled {
+                for _ in 0..<2 {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    try? await Task.sleep(for: .milliseconds(350))
+                }
+                AudioServicesPlaySystemSound(1007)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func knopf(_ symbol: String, farbe: Color, text: String, aktion: @escaping () -> Void) -> some View {
+        Button(action: aktion) {
+            VStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 28, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 74, height: 74).background(farbe, in: Circle())
+                Text(text).font(.caption).foregroundStyle(Farbe.text2)
             }
         }
     }

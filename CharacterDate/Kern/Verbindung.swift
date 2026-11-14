@@ -203,10 +203,11 @@ final class Verbindung {
     func abbestellen(_ id: UUID) { hoerer[id] = nil }
 
     /// WebSocket für ein Telefonat (Schlüssel im Header).
-    func anrufSocket(_ charId: String) -> URLSessionWebSocketTask? {
+    func anrufSocket(_ charId: String, eingehend: Bool = false) -> URLSessionWebSocketTask? {
         guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return nil }
         teile.scheme = teile.scheme == "https" ? "wss" : "ws"
         teile.path = "/ws/anruf/\(charId)"
+        if eingehend { teile.queryItems = [URLQueryItem(name: "eingehend", value: "1")] }
         guard let url = teile.url else { return nil }
         var r = URLRequest(url: url)
         if let k = schluessel { r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization") }

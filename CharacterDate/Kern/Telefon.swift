@@ -41,7 +41,9 @@ final class Telefon {
     // MARK: Start / Ende
 
     @MainActor
-    func starten(_ v: Verbindung, char: Charakter) {
+    @ObservationIgnored var eingehend = false
+    func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false) {
+        self.eingehend = eingehend
         Telefon.laeuft = true
         verbindung = v
         charId = char.id
@@ -122,7 +124,7 @@ final class Telefon {
     }
 
     func verbinden() {
-        guard socket == nil, let v = verbindung, let s = v.anrufSocket(charId) else {
+        guard socket == nil, let v = verbindung, let s = v.anrufSocket(charId, eingehend: eingehend) else {
             Task { @MainActor in self.beenden(grund: "Keine Verbindung zum PC.") }
             return
         }
