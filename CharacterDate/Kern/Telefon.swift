@@ -40,8 +40,9 @@ final class Telefon {
 
     // MARK: Start / Ende
 
-    @MainActor
     @ObservationIgnored var eingehend = false
+
+    @MainActor
     func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false) {
         self.eingehend = eingehend
         Telefon.laeuft = true
