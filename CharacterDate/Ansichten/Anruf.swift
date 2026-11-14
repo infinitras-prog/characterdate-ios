@@ -18,6 +18,7 @@ struct AnrufAnsicht: View {
     @FocusState private var tippFokus: Bool
     @State private var ort: String?
     @State private var abo: UUID?
+    @State private var welle = Wellenform()
 
     var body: some View {
         ZStack {
@@ -69,7 +70,9 @@ struct AnrufAnsicht: View {
 
             VStack(spacing: 18) {
                 Spacer(minLength: video ? 10 : 40)
-                if !video { ring }
+                if !video {
+                    if tippen { Avatar(c: c, groesse: 72).transition(.scale.combined(with: .opacity)) } else { ring }
+                }
                 Text(c.name).font(.system(size: 32, weight: .semibold))
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text(statusText).font(.headline.monospacedDigit()).foregroundStyle(Farbe.text2)
@@ -84,9 +87,13 @@ struct AnrufAnsicht: View {
                     Text(i).font(.footnote).foregroundStyle(Farbe.text3).multilineTextAlignment(.center).padding(.horizontal, 30)
                 }
                 Spacer()
-                untertitel
-                if !video { Spacer() }
-                if tippen && telefon.zustand == .aktiv { tippZeile }
+                if tippen {
+                    chatFenster
+                } else {
+                    untertitel
+                    if !video { Spacer() }
+                }
+                WellenLeiste(welle: welle).padding(.horizontal, 24)
                 knoepfe.padding(.bottom, 30)
             }
             .foregroundStyle(.white)
@@ -124,12 +131,14 @@ struct AnrufAnsicht: View {
             }
         }
         .onAppear {
-            telefon.starten(v, char: c, eingehend: eingehend)
+            telefon.starten(v, char: c, eingehend: eingehend, video: video)
+            welle.starten(telefon)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
                 withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
             }
         }
         .onDisappear {
+            welle.stoppen()
             if telefon.zustand != .beendet {
                 telefon.melden("Anrufbildschirm verschwand, während der Anruf noch lief (Zustand \(telefon.zustand))")
                 telefon.beenden()
@@ -193,6 +202,43 @@ struct AnrufAnsicht: View {
         .frame(minHeight: 110)
     }
 
+    /// Chatfenster im Anruf: alles Gesagte und Getippte als Verlauf, unten das Schreibfeld.
+    private var chatFenster: some View {
+        VStack(spacing: 8) {
+            ScrollViewReader { leser in
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        if telefon.verlauf.isEmpty {
+                            Text(telefon.zustand == .aktiv ? "Sprich oder schreib – sie antwortet mit Stimme." : "Sobald sie abhebt, kannst du hier auch schreiben.")
+                                .font(.footnote).foregroundStyle(Farbe.text3).padding(.top, 20)
+                        }
+                        ForEach(telefon.verlauf) { z in
+                            HStack {
+                                if !z.sie { Spacer(minLength: 40) }
+                                Text(z.text).font(.subheadline)
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(z.sie ? AnyShapeStyle(Color.white.opacity(0.16)) : AnyShapeStyle(Farbe.verlauf),
+                                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                if z.sie { Spacer(minLength: 40) }
+                            }
+                            .id(z.id)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .onChange(of: telefon.verlauf) { _, l in
+                    if let letzte = l.last { withAnimation(.easeOut(duration: 0.2)) { leser.scrollTo(letzte.id, anchor: .bottom) } }
+                }
+            }
+            .frame(maxHeight: video ? 230 : 300)
+            tippZeile
+        }
+        .padding(10)
+        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 14)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
     private var tippZeile: some View {
         HStack(spacing: 8) {
             TextField("Nachricht – sie antwortet mit Stimme", text: $getippt)
@@ -204,9 +250,8 @@ struct AnrufAnsicht: View {
                 Image(systemName: "paperplane.fill").foregroundStyle(.white).frame(width: 40, height: 40)
                     .background(Farbe.verlauf, in: Circle())
             }
-            .disabled(getippt.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(getippt.trimmingCharacters(in: .whitespaces).isEmpty || telefon.zustand != .aktiv)
         }
-        .padding(.horizontal, 20)
     }
 
     private func tippAbschicken() {
@@ -218,19 +263,22 @@ struct AnrufAnsicht: View {
 
     private var knoepfe: some View {
         HStack(spacing: 18) {
-            rund("keyboard", text: "Schreiben", an: tippen) {
-                tippen.toggle(); tippFokus = tippen
+            rund("bubble.left.and.text.bubble.right.fill", text: "Chat", an: tippen) {
+                withAnimation(.easeOut(duration: 0.25)) { tippen.toggle() }
+                tippFokus = tippen
             }
             rund(telefon.stumm ? "mic.slash.fill" : "mic.fill", text: telefon.stumm ? "Stumm" : "Mikro", an: telefon.stumm) {
                 telefon.stummSchalten()
             }
-            rund(augen.an ? "eye.fill" : "eye.slash", text: augen.an ? (augen.hinten ? "Rückkamera" : "Frontkamera") : "Ihre Augen", an: augen.an) {
-                if augen.an {
-                    augen.ausschalten(); telefon.kameraMelden(false)
-                } else {
-                    Task {
-                        augen.bild = { [t = telefon] url in t.blickSenden(url) }
-                        if await augen.einschalten() { telefon.kameraMelden(true) }
+            if video {          // Kamera als ihre Augen gibt es nur im Videoanruf
+                rund(augen.an ? "eye.fill" : "eye.slash", text: augen.an ? (augen.hinten ? "Rückkamera" : "Frontkamera") : "Ihre Augen", an: augen.an) {
+                    if augen.an {
+                        augen.ausschalten(); telefon.kameraMelden(false)
+                    } else {
+                        Task {
+                            augen.bild = { [t = telefon] url in t.blickSenden(url) }
+                            if await augen.einschalten() { telefon.kameraMelden(true) }
+                        }
                     }
                 }
             }
@@ -241,7 +289,7 @@ struct AnrufAnsicht: View {
             }
             .accessibilityLabel("Auflegen")
             .disabled(telefon.zustand == .beendet)
-            rund(telefon.lautsprecher ? "speaker.wave.3.fill" : "speaker.fill", text: "Lautsprecher", an: telefon.lautsprecher) {
+            rund(telefon.lautsprecher ? "speaker.wave.3.fill" : "ear", text: telefon.lautsprecher ? "Lautsprecher" : "Hörmuschel", an: telefon.lautsprecher) {
                 telefon.lautsprecherSchalten()
             }
         }

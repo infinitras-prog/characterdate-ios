@@ -1,13 +1,12 @@
 import Foundation
 import AVFoundation
-import CallKit
 import Observation
 import UIKit
 
 /// Echtzeit-Telefonat mit dem Kern (gleiches Protokoll wie am PC, siehe core/cd/anruf.py):
 /// Mikrofon → PCM16 mono 16 kHz als Binärrahmen; ihre Stimme kommt als PCM16 mono (Abtastrate aus »ton«).
-/// Echo-Unterdrückung übernimmt die Voice-Processing-Einheit von iOS. CallKit zeigt den Anruf im System an
-/// (grüne Anzeige, Sperrbildschirm, Bluetooth); klappt CallKit nicht (z. B. im Simulator), läuft es ohne.
+/// Echo-Unterdrückung übernimmt die Voice-Processing-Einheit von iOS. Ohne CallKit: iOS hat den Anruf dort
+/// abgelehnt und mit »providerDidReset« jeden Anruf sofort wieder beendet (Log 14.11.) – die App führt ihn selbst.
 @Observable
 final class Telefon {
     /// Läuft gerade irgendein Anruf? (Dann verbindet die App nicht neu und sperrt nicht.)
@@ -24,6 +23,9 @@ final class Telefon {
     var duText = ""
     var pegelDu: Float = 0
     var pegelSie: Float = 0
+    /// Gesprächsverlauf fürs Chatfenster im Anruf (gesprochen und getippt).
+    struct Zeile: Identifiable, Equatable { let id = UUID(); let sie: Bool; var text: String; var zeit = Date() }
+    var verlauf: [Zeile] = []
 
     private var socket: URLSessionWebSocketTask?
     private let engine = AVAudioEngine()
@@ -33,8 +35,6 @@ final class Telefon {
     private var wandler: AVAudioConverter?
     private let zielFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var audioLaeuft = false
-    private var callID: UUID?
-    private var zentrale: Zentrale?
     private var verbindung: Verbindung?
     private var charId = ""
 
@@ -43,35 +43,33 @@ final class Telefon {
     @ObservationIgnored var eingehend = false
 
     @MainActor
-    func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false) {
+    func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false, video: Bool = false) {
         self.eingehend = eingehend
         Telefon.laeuft = true
         verbindung = v
         charId = char.id
-        let id = UUID()
-        callID = id
-        let z = Zentrale(telefon: self)
-        zentrale = z
-        z.anrufen(id: id, name: char.name) { [weak self] ok in
-            guard let self, !ok else { return }
-            self.letzterFehler = "CallKit hat den Anruf abgelehnt – ohne CallKit weiter"
-            self.melden(self.letzterFehler!)
-            // Ohne CallKit: Sitzung selbst einrichten
-            self.sitzungEinrichten()
-            try? AVAudioSession.sharedInstance().setActive(true)
-            self.verbinden()
-            self.audioStarten()
+        // Telefonat: Hörmuschel (Handy ans Ohr, Display aus); Videoanruf: Lautsprecher
+        lautsprecher = video
+        sitzungEinrichten()
+        do { try AVAudioSession.sharedInstance().setActive(true) }
+        catch { letzterFehler = "Audio-Sitzung: \(error.localizedDescription)"; melden(letzterFehler!) }
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(lautsprecher ? .speaker : .none)
+        audioStarten()
+        freizeichenStarten()                 // »tuut … tuut« schon beim Wählen, bis sie wirklich dran ist
+        UIDevice.current.isProximityMonitoringEnabled = !lautsprecher
+        verbinden()
+        NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            // Kopfhörer/Bluetooth ab- oder angesteckt: gewählte Ausgabe beibehalten
+            guard let self, self.zustand != .beendet, self.lautsprecher else { return }
+            try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
         }
     }
 
-    /// Vom Knopf: über CallKit auflegen (oder direkt, wenn CallKit nicht läuft).
     @MainActor
-    func auflegen() {
-        if let z = zentrale, let id = callID, z.aktiv { z.auflegen(id: id) } else { beenden() }
-    }
+    func auflegen() { beenden() }
 
     @MainActor
-    func stummSchalten() { setzeStumm(!stumm); if let z = zentrale, let id = callID, z.aktiv { z.stumm(id: id, an: stumm) } }
+    func stummSchalten() { setzeStumm(!stumm) }
 
     @MainActor
     func setzeStumm(_ an: Bool) {
@@ -113,7 +111,7 @@ final class Telefon {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { s?.cancel(with: .normalClosure, reason: nil) }
         audioStoppen()
         UIDevice.current.isProximityMonitoringEnabled = false
-        if let z = zentrale, let id = callID, z.aktiv { z.gemeldetBeendet(id: id) }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: Verbindung
@@ -182,13 +180,22 @@ final class Telefon {
                 zustand = .aktiv
                 start = Date()
                 UIDevice.current.isProximityMonitoringEnabled = !lautsprecher
-                if let id = callID { zentrale?.verbunden(id: id) }
             case "verpasst", "beendet":
                 beenden(grund: d["grund"] as? String ?? (z == "verpasst" ? "Nicht erreicht." : nil))
             default: break
             }
-        case "sie": sieText = d["text"] as? String ?? ""
-        case "du": duText = d["text"] as? String ?? ""
+        case "sie":
+            let t = d["text"] as? String ?? ""
+            sieText = t
+            // Sätze einer Antwort in einer Blase sammeln
+            if let l = verlauf.last, l.sie, Date().timeIntervalSince(l.zeit) < 6 {
+                verlauf[verlauf.count - 1].text += " " + t
+                verlauf[verlauf.count - 1].zeit = Date()
+            } else if !t.isEmpty { verlauf.append(Zeile(sie: true, text: t)) }
+        case "du":
+            let t = d["text"] as? String ?? ""
+            duText = t
+            if !t.isEmpty { verlauf.append(Zeile(sie: false, text: t)) }
         case "ton":
             if let sr = d["sr"] as? Double { stimmFormatSetzen(sr) }
             else if let sr = d["sr"] as? Int { stimmFormatSetzen(Double(sr)) }
@@ -231,7 +238,7 @@ final class Telefon {
             try engine.start()
             stimme.play()
             audioLaeuft = true
-            if zustand == .klingelt { Task { @MainActor in self.freizeichenStarten() } }
+            if zustand != .aktiv { Task { @MainActor in self.freizeichenStarten() } }
         } catch {
             Task { @MainActor in self.beenden(grund: "Audio konnte nicht starten: \(error.localizedDescription)") }
         }
@@ -310,7 +317,7 @@ final class Telefon {
     /// Deutsches Freizeichen: 425 Hz, 1 s Ton, 4 s Pause – solange es klingelt.
     @MainActor
     private func freizeichenStarten() {
-        guard audioLaeuft, !freizeichen.isPlaying, zustand == .klingelt else { return }
+        guard audioLaeuft, !eingehend, !freizeichen.isPlaying, zustand == .klingelt || zustand == .waehlt else { return }
         let f = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
         let n = AVAudioFrameCount(44100 * 5)
         guard let p = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: n), let k = p.floatChannelData?[0] else { return }
@@ -323,103 +330,5 @@ final class Telefon {
         }
         freizeichen.scheduleBuffer(p, at: nil, options: .loops, completionHandler: nil)
         freizeichen.play()
-    }
-}
-
-// MARK: - CallKit
-
-/// Meldet den Anruf bei iOS an (eigene Klasse, damit Telefon kein NSObject sein muss).
-final class Zentrale: NSObject, CXProviderDelegate {
-    private let provider: CXProvider
-    private let controller = CXCallController()
-    private weak var telefon: Telefon?
-    private(set) var aktiv = false
-
-    init(telefon: Telefon) {
-        self.telefon = telefon
-        let k = CXProviderConfiguration()
-        k.supportsVideo = false
-        k.maximumCallsPerCallGroup = 1
-        k.maximumCallGroups = 1
-        k.supportedHandleTypes = [.generic]
-        k.includesCallsInRecents = false
-        if let bild = UIImage(systemName: "heart.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal),
-           let png = bild.pngData() { k.iconTemplateImageData = png }
-        provider = CXProvider(configuration: k)
-        super.init()
-        provider.setDelegate(self, queue: .main)
-    }
-
-    func anrufen(id: UUID, name: String, fertig: @escaping (Bool) -> Void) {
-        let handle = CXHandle(type: .generic, value: name)
-        let a = CXStartCallAction(call: id, handle: handle)
-        a.contactIdentifier = name
-        controller.request(CXTransaction(action: a)) { [weak self] fehler in
-            DispatchQueue.main.async {
-                if fehler == nil {
-                    self?.aktiv = true
-                    let u = CXCallUpdate()
-                    u.remoteHandle = handle
-                    u.localizedCallerName = name
-                    u.hasVideo = false
-                    self?.provider.reportCall(with: id, updated: u)
-                }
-                fertig(fehler == nil)
-            }
-        }
-    }
-
-    func auflegen(id: UUID) {
-        controller.request(CXTransaction(action: CXEndCallAction(call: id))) { [weak self] fehler in
-            if fehler != nil { DispatchQueue.main.async { self?.telefon?.beenden() } }
-        }
-    }
-
-    func stumm(id: UUID, an: Bool) {
-        controller.request(CXTransaction(action: CXSetMutedCallAction(call: id, muted: an))) { _ in }
-    }
-
-    func verbunden(id: UUID) { provider.reportOutgoingCall(with: id, connectedAt: Date()) }
-
-    func gemeldetBeendet(id: UUID) {
-        guard aktiv else { return }
-        aktiv = false
-        provider.reportCall(with: id, endedAt: Date(), reason: .remoteEnded)
-    }
-
-    // CXProviderDelegate (läuft auf der Hauptschlange)
-    func providerDidReset(_ provider: CXProvider) {
-        telefon?.melden("CallKit: providerDidReset (System hat alle Anrufe zurückgesetzt)")
-        aktiv = false
-        MainActor.assumeIsolated { telefon?.beenden() }
-    }
-
-    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
-        telefon?.sitzungEinrichten()
-        provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
-        telefon?.verbinden()
-        action.fulfill()
-    }
-
-    func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        telefon?.melden("CallKit: Auflegen ausgelöst (Knopf, Sperrtaste oder System), Zustand vorher \(String(describing: telefon?.zustand))")
-        aktiv = false
-        MainActor.assumeIsolated { telefon?.beenden() }
-        action.fulfill()
-    }
-
-    func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
-        MainActor.assumeIsolated { telefon?.setzeStumm(action.isMuted) }
-        action.fulfill()
-    }
-
-    func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        telefon?.melden("CallKit: Audio-Sitzung aktiv")
-        telefon?.audioStarten()
-    }
-
-    func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-        telefon?.melden("CallKit: Audio-Sitzung deaktiviert")
-        telefon?.audioStoppen()
     }
 }
