@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreHaptics
 
 /// Startbildschirm ohne Video – identisch zum Windows-Splash (gleicher Zeitplan, Bild im 9:16-Format):
 /// Herz taucht auf, Herzschlag-Glut, drehende Strahlen, Partikelring, Funken; bei 3,9 s Blitz + Druckwelle + Name.
@@ -55,8 +56,8 @@ struct Splash: View {
         .scaleEffect(weg ? 1.08 : 1)
         .onAppear {
             start = Date()
+            if !ruhig { Herzschlag.spielen() }
             DispatchQueue.main.asyncAfter(deadline: .now() + (ruhig ? 0.2 : zuendung)) {
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 withAnimation(.spring(response: 0.9, dampingFraction: 0.8)) { name = true }
                 withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false).delay(1.0)) { schimmer = true }
             }
@@ -69,6 +70,52 @@ struct Splash: View {
 }
 
 /// Berechnet die ganze Splash-Szene aus der verstrichenen Zeit (keine Zustände je Bild → flüssig und deterministisch).
+/// Drei Herzschläge als Haptik – genau im Takt des Leuchtens (Szene: Schlag ab 1,6 s, Periode 1,25 s,
+/// Spitzen bei 12 % und 34 % der Periode). Jeder Schlag ist ein Doppelschlag: kräftig »Lub«, weicher »Dub«.
+enum Herzschlag {
+    private static var engine: CHHapticEngine?
+
+    static func spielen() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return ersatz() }
+        do {
+            let e = try CHHapticEngine()
+            e.isAutoShutdownEnabled = true
+            try e.start()
+            var ereignisse: [CHHapticEvent] = []
+            for k in 0..<3 {
+                let basis = 1.6 + Double(k) * 1.25
+                // Lub: tief und kräftig, mit kurzem Nachklang
+                ereignisse.append(CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    .init(parameterID: .hapticIntensity, value: 1.0), .init(parameterID: .hapticSharpness, value: 0.25)],
+                    relativeTime: basis + 0.15))
+                ereignisse.append(CHHapticEvent(eventType: .hapticContinuous, parameters: [
+                    .init(parameterID: .hapticIntensity, value: 0.45), .init(parameterID: .hapticSharpness, value: 0.1)],
+                    relativeTime: basis + 0.16, duration: 0.09))
+                // Dub: weicher
+                ereignisse.append(CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    .init(parameterID: .hapticIntensity, value: 0.6), .init(parameterID: .hapticSharpness, value: 0.2)],
+                    relativeTime: basis + 0.425))
+            }
+            let spieler = try e.makePlayer(with: CHHapticPattern(events: ereignisse, parameters: []))
+            try spieler.start(atTime: CHHapticTimeImmediate)
+            engine = e        // festhalten, bis die Schläge gespielt sind
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { engine?.stop(); engine = nil }
+        } catch {
+            ersatz()
+        }
+    }
+
+    /// Geräte ohne Core Haptics: einfache Stöße im gleichen Takt
+    private static func ersatz() {
+        let stark = UIImpactFeedbackGenerator(style: .heavy), weich = UIImpactFeedbackGenerator(style: .soft)
+        for k in 0..<3 {
+            let basis = 1.6 + Double(k) * 1.25
+            DispatchQueue.main.asyncAfter(deadline: .now() + basis + 0.15) { stark.impactOccurred(intensity: 1.0) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + basis + 0.425) { weich.impactOccurred(intensity: 0.6) }
+        }
+    }
+}
+
 struct SplashSzene {
     struct Teil { let w: Double; let v: Double; let r: Double; let d: Double; let farbe: Color; let phase: Double }
     struct Funke { let x: Double; let tempo: Double; let r: Double; let versatz: Double; let leben: Double; let farbe: Color }
