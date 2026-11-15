@@ -7,6 +7,8 @@ import Observation
 @Observable
 final class GesichtStrom {
     var bild: UIImage?
+    var vorher: UIImage?       // das Bild davor – das neue blendet weich darüber (flüssig statt ruckelig)
+    var nummer = 0
     var aktiv = false          // Gesicht wird genutzt (sonst Clips/Standbild)
     var bereit = false
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
@@ -35,7 +37,9 @@ final class GesichtStrom {
                 case .success(let n):
                     switch n {
                     case .data(let d):
-                        if let b = UIImage(data: d) { self.bild = b; self.bereit = true }
+                        if let b = UIImage(data: d) {
+                            self.vorher = self.bild; self.bild = b; self.nummer &+= 1; self.bereit = true
+                        }
                     case .string(let t):
                         if t.contains("\"fehler\"") && !self.bereit { self.aktiv = false; return }
                     @unknown default: break
@@ -52,8 +56,17 @@ struct LiveGesichtAnsicht: View {
     var body: some View {
         GeometryReader { g in
             if let b = strom.bild {
-                Image(uiImage: b).resizable().interpolation(.high).scaledToFill()
-                    .frame(width: g.size.width, height: g.size.height).clipped()
+                ZStack {
+                    if let alt = strom.vorher {
+                        Image(uiImage: alt).resizable().interpolation(.high).scaledToFill()
+                            .frame(width: g.size.width, height: g.size.height).clipped()
+                    }
+                    Image(uiImage: b).resizable().interpolation(.high).scaledToFill()
+                        .frame(width: g.size.width, height: g.size.height).clipped()
+                        .id(strom.nummer)
+                        .transition(.opacity)
+                }
+                .animation(.linear(duration: 0.055), value: strom.nummer)
             } else {
                 VStack(spacing: 12) {
                     ProgressView().tint(.white).scaleEffect(1.2)
