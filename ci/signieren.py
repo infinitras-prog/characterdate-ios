@@ -137,7 +137,7 @@ def faehigkeit_sicherstellen(bundle_id, art):
     """Fähigkeit an der App-ID einschalten (z. B. Mitteilungen mit Profilbild). Klappt das nicht, wird die
     Berechtigung aus dem Projekt genommen – der Build läuft dann ohne (Mitteilungen mit App-Symbol)."""
     try:
-        da = api("GET", "/bundleIds/%s/bundleIdCapabilities?limit=100" % bundle_id).get("data", [])
+        da = api("GET", "/bundleIds/%s/bundleIdCapabilities" % bundle_id).get("data", [])
         if any(c["attributes"].get("capabilityType") == art for c in da):
             return
         api("POST", "/bundleIdCapabilities", {"data": {"type": "bundleIdCapabilities", "attributes": {"capabilityType": art},
