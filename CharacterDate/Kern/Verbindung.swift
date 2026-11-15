@@ -224,6 +224,20 @@ final class Verbindung {
         return s
     }
 
+    /// Bildstrom des lebendigen Gesichts im Videoanruf.
+    func gesichtSocket(_ charId: String, bild: String?) -> URLSessionWebSocketTask? {
+        guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return nil }
+        teile.scheme = teile.scheme == "https" ? "wss" : "ws"
+        teile.path = "/ws/gesicht/\(charId)"
+        if let bild, !bild.isEmpty { teile.queryItems = [URLQueryItem(name: "bild", value: bild)] }
+        guard let url = teile.url else { return nil }
+        var r = URLRequest(url: url)
+        if let k = schluessel { r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization") }
+        let s = sitzung.webSocketTask(with: r)
+        s.maximumMessageSize = 8 * 1024 * 1024
+        return s
+    }
+
     private func ereignisseStarten() {
         socket?.cancel()
         guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return }

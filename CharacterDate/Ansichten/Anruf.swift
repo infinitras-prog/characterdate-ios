@@ -13,6 +13,7 @@ struct AnrufAnsicht: View {
     @State private var bildKennung = "avatar"
     @State private var augen = Augen()
     @State private var clips = ClipSpieler()
+    @State private var gesicht = GesichtStrom()
     @State private var tippen = false
     @State private var getippt = ""
     @FocusState private var tippFokus: Bool
@@ -23,7 +24,15 @@ struct AnrufAnsicht: View {
     var body: some View {
         ZStack {
             Farbe.grund.ignoresSafeArea()
-            if video, clips.bereit {
+            if video, gesicht.aktiv {
+                // Lebendiges Gesicht (LivePortrait am PC) – bis das erste Bild da ist, steht das Szenenbild dahinter
+                if let portraet, gesicht.bild == nil {
+                    Image(uiImage: portraet).resizable().scaledToFill().ignoresSafeArea().blur(radius: 6)
+                }
+                LiveGesichtAnsicht(strom: gesicht).ignoresSafeArea().transition(.opacity)
+                LinearGradient(colors: [.black.opacity(0.45), .clear, .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            } else if video, clips.bereit {
                 ClipAnsicht(spieler: clips.spieler).ignoresSafeArea().transition(.opacity)
                 LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
@@ -101,9 +110,19 @@ struct AnrufAnsicht: View {
         .statusBarHidden(telefon.zustand == .aktiv)
         .task {
             guard video else { return }
-            // Echte Bewegungen: Clips zur Szene (falls schon gedreht) – sonst lebendes Standbild
+            // 1. Wahl: lebendiges Gesicht vom PC (LivePortrait) – sieht aus wie ein echtes Videobild
+            struct GS: Decodable { let verfuegbar: Bool }
+            let gs: GS? = try? await v.anfrage("/api/gesicht/status")
+            let mitGesicht = gs?.verfuegbar ?? false
+            // Szenenbild 9:16 zuerst holen: dort, wo sie laut Chat gerade ist
+            struct Szene0: Decodable { let url: String?; let ort: String? }
+            let szene0: Szene0? = try? await v.anfrage("/api/charaktere/\(c.id)/videoszene?format=hoch&nur_lesen=1", methode: "POST")
+            if mitGesicht {
+                gesicht.starten(v, charId: c.id, bild: szene0?.url)
+            }
+            // Sonst echte Bewegungen: Clips zur Szene (falls schon gedreht) – sonst lebendes Standbild
             struct ClipListe: Decodable { let clips: [String: String]; let varianten: [String: [String]]? }
-            if let l: ClipListe = try? await v.anfrage("/api/charaktere/\(c.id)/anrufclips?format=hoch"), l.clips["ruhe"] != nil {
+            if !mitGesicht, let l: ClipListe = try? await v.anfrage("/api/charaktere/\(c.id)/anrufclips?format=hoch"), l.clips["ruhe"] != nil {
                 clips.sieRedet = { [t = telefon] in t.pegelSie > 0.05 }
                 clips.duRedest = { [t = telefon] in t.pegelDu > 0.05 }
                 await clips.laden(v, clips: l.varianten ?? l.clips.mapValues { [$0] })
@@ -118,13 +137,14 @@ struct AnrufAnsicht: View {
                 guard e.typ == "videoszene", e.charId == c.id, (e.roh["format"] as? String) == "hoch",
                       let u = e.roh["url"] as? String else { return }
                 Task { @MainActor in
+                    if gesicht.aktiv { gesicht.starten(v, charId: c.id, bild: u) }     // neue Szene → Gesicht dort weiter
                     if let d = try? await v.medien(u), let b = UIImage(data: d) {
                         withAnimation(.easeInOut(duration: 0.8)) { portraet = b; bildKennung = u; ort = e.roh["ort"] as? String }
                     }
                 }
             }
         }
-        .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten(); clips.stoppen() }
+        .onDisappear { if let abo { v.abbestellen(abo) }; augen.ausschalten(); clips.stoppen(); gesicht.stoppen() }
         .onChange(of: telefon.sieText) { _, t in
             if t.range(of: #"ha(ha)+|hihi|lach"#, options: [.regularExpression, .caseInsensitive]) != nil {
                 clips.lachenBis = Date().addingTimeInterval(2.5)
