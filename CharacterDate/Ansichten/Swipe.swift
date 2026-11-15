@@ -67,6 +67,8 @@ private struct TankStapel: Decodable {
     var erzeugtGerade: Bool = false
     var schritt: String?
     var superLikesUebrig: Int = 0
+    var voll: Bool?
+    var manuell: TankStatus.Manuell?
 }
 
 private struct SwipeAntwort: Decodable {
@@ -93,6 +95,7 @@ struct SwipeAnsicht: View {
     @State private var match: (profil: TankProfil, char: Charakter?)?
     @State private var fehler: String?
     @State private var einstellungen = false
+    @State private var tankOffen = false
     @State private var letzteRichtung: SwipeRichtung?
     @State private var boost = false
 
@@ -129,6 +132,15 @@ struct SwipeAnsicht: View {
             }
         }
         .sheet(isPresented: $einstellungen) { TankEinstellungen().presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $tankOffen) {
+            NavigationStack {
+                ScrollView { TankKarte().padding() }
+                    .background(Hintergrund())
+                    .navigationTitle("Dein Profil-Tank").navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
+            .onDisappear { Task { await laden(still: true) } }
+        }
         .task { await laden() }
         .task {
             // Tank füllt sich im Hintergrund: ab und zu nachschauen
@@ -139,6 +151,11 @@ struct SwipeAnsicht: View {
         }
     }
 
+    private var tankStand: TankStatus {
+        TankStatus(imTank: info.imTank, ziel: info.ziel, erzeugtGerade: info.erzeugtGerade, schritt: info.schritt,
+                   voll: info.voll, manuell: info.manuell, superLikesUebrig: info.superLikesUebrig)
+    }
+
     // MARK: Teile
 
     private var kopf: some View {
@@ -147,12 +164,17 @@ struct SwipeAnsicht: View {
                 .foregroundStyle(LinearGradient(colors: [.orange, Farbe.rose], startPoint: .bottom, endPoint: .top))
             Text("Swipe").font(.title2.bold())
             Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: "person.2.fill").font(.caption2)
-                Text("\(info.imTank)/\(info.ziel)").font(.caption.monospacedDigit().bold())
-                if info.erzeugtGerade { ProgressView().controlSize(.mini).tint(.white) }
+            Button { tankOffen = true } label: {
+                HStack(spacing: 6) {
+                    TankHerz(stand: tankStand, groesse: 24, lampen: false)
+                    Text("\(info.imTank)/\(info.ziel)").font(.caption.monospacedDigit().bold())
+                    Lampe(farbe: Color(red: 0.96, green: 0.72, blue: 0.38), an: tankStand.fuellt, blinkt: tankStand.pausiert, text: "")
+                    Lampe(farbe: Farbe.mint, an: tankStand.istVoll, blinkt: false, text: "")
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5).glas(14)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6).glas(14)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Tank: \(info.imTank) von \(info.ziel) – antippen zum Füllen")
             Button { einstellungen = true } label: {
                 Image(systemName: "slider.horizontal.3").font(.body.bold()).frame(width: 36, height: 36).glas(18)
             }
@@ -595,6 +617,7 @@ struct TankEinstellungen: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section { TankKarte() }
                 if e.geladen {
                     Section {
                         Toggle("Profile im Hintergrund erzeugen", isOn: Binding(

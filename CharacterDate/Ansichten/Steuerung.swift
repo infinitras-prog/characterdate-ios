@@ -20,14 +20,16 @@ struct RegieKnopf: View {
 
     var body: some View {
         Button { offen = true } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "wand.and.stars").font(.caption.bold())
-                Text(kurzname).font(.caption.weight(.semibold)).lineLimit(1)
+            // kleiner Chip mit Gehirn: das Sprachmodell (Regie) – Name steht im Auswahlblatt
+            ZStack {
+                Image(systemName: "cpu").font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(LinearGradient(colors: [Farbe.violett, Farbe.rose], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: "brain").font(.system(size: 9.5, weight: .bold)).foregroundStyle(.white)
             }
-            .padding(.horizontal, 11).frame(height: 30)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Farbe.rose.opacity(0.45), lineWidth: 1))
-            .foregroundStyle(.white)
+            .frame(width: 34, height: 34)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay(Circle().stroke(Farbe.rose.opacity(0.45), lineWidth: 1))
+            .shadow(color: Farbe.rose.opacity(0.35), radius: 6)
         }
         .accessibilityLabel("Regie-Modell wählen, aktuell \(kurzname)")
         .task { await laden() }
@@ -258,6 +260,7 @@ struct AlleEinstellungen: View {
     }
 
     @ViewBuilder private var inhalt: some View {
+        Section { TankKarte() } header: { Label("Swipe-Tank", systemImage: "flame.fill") }
         Section {
             Picker("Realismus", selection: bindung("realismus", "natuerlich")) {
                 Text("Sofort").tag("sofort"); Text("Natürlich").tag("natuerlich"); Text("Echt").tag("echt")

@@ -445,6 +445,7 @@ struct ChatAnsicht: View {
                 TextField("Nachricht an \(c?.name ?? "") …", text: $text, axis: .vertical)
                     .lineLimit(1...5).focused($fokus)
                     .padding(.horizontal, 14).padding(.vertical, 11).glas(22)
+                    .onChange(of: text) { _, _ in TippMelder.melden(v) }
             }
             Button {
                 if rekorder.laeuft { Task { await spracheSenden() } }
@@ -585,5 +586,16 @@ struct TippPunkte: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(Color(red: 0.17, green: 0.15, blue: 0.25), in: Capsule())
         .onAppear { DispatchQueue.main.async { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi * 2 } } }
+    }
+}
+
+/// Tastenschläge (gedrosselt alle 4 s) an den PC: du tippst → er bremst Hintergrund-Rechner, und das iPhone gilt als aktiv.
+@MainActor
+enum TippMelder {
+    private static var zuletzt = Date.distantPast
+    static func melden(_ v: Verbindung) {
+        guard Date().timeIntervalSince(zuletzt) > 4 else { return }
+        zuletzt = Date()
+        Task { _ = try? await v.roh("/api/tippen", methode: "POST") }
     }
 }
