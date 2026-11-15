@@ -80,6 +80,7 @@ struct ChatAnsicht: View {
     @State private var stimmeLaedt = false
     @State private var date: DateInfo?
     @State private var dateVideo = false
+    @State private var liedBlatt = false
     @State private var dateWahl = false
     @State private var stimmeBearbeiten = false
     @State private var schlange: [String] = []
@@ -195,6 +196,7 @@ struct ChatAnsicht: View {
                             Button { dateWahl = true } label: { Label("Date …", systemImage: "heart.circle") }
                         }
                         Button { dateVideo = true } label: { Label("Date-Video …", systemImage: "film.stack") }
+                        Button { liedBlatt = true } label: { Label("Lied covern / Musikvideo …", systemImage: "music.mic") }
                         Button { Task { await storyJetzt() } } label: { Label("Story jetzt", systemImage: "sparkles") }
                         if c?.hatStimme == true {
                             Button { stimmeBearbeiten = true } label: { Label("Stimme bearbeiten", systemImage: "waveform.badge.magnifyingglass") }
@@ -283,6 +285,7 @@ struct ChatAnsicht: View {
         .onChange(of: foto) { _, neu in if let neu { Task { await fotoSenden(neu) } } }
         .fullScreenCover(item: $gross) { b in BildVollbild(bild: b, geaendert: { Task { await laden() } }) }
         .sheet(isPresented: $dateVideo) { if let c { DateVideoBlatt(c: c, ort: date?.ort) } }
+        .sheet(isPresented: $liedBlatt) { if let c { LiedBlatt(c: c) } }
     }
 
     // MARK: Zeilen
@@ -336,9 +339,18 @@ struct ChatAnsicht: View {
             } else {
                 Text("📷 Das Foto ist nicht geworden.").font(.footnote).padding(10).glas(16)
             }
+        case "musik":
+            if !ich && m.m("status")?.text == "entsteht" {
+                ErstellungsKarte(nid: m.id, titel: "Ihr Cover", symbol: "music.note")
+            } else if !ich && m.m("status")?.text == "fehler" {
+                Text("🎵 Das Cover ist nicht geworden.").font(.footnote).padding(10).glas(16)
+            } else {
+                MusikKarte(m: m)
+            }
         case "video":
             if m.m("status")?.text == "entsteht" {
-                ErstellungsKarte(nid: m.id, titel: m.m("art")?.text == "datevideo" ? "Euer Date-Video" : "Video",
+                ErstellungsKarte(nid: m.id, titel: m.m("art")?.text == "datevideo" ? "Euer Date-Video"
+                                 : m.m("art")?.text == "musikvideo" ? "Musikvideo" : "Video",
                                  symbol: m.m("art")?.text == "datevideo" ? "heart.fill" : "film.fill", breite: 240)
             } else if let pfad = m.m("video")?.text {
                 ChatVideo(pfad: pfad).frame(width: 230, height: 330).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
