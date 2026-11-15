@@ -116,8 +116,6 @@ def einrichten():
             print("App-ID angelegt:", bundle)
         if not treffer:
             raise SystemExit("::error::App-ID %s fehlt im Entwicklerportal" % bundle)
-        if kurz == "APP":
-            faehigkeit_sicherstellen(treffer[0]["id"], "USERNOTIFICATIONS_COMMUNICATION")
         name = "CharacterDate CI %s %s" % (lauf, kurz.lower())
         p = api("POST", "/profiles", {"data": {"type": "profiles", "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
                                                 "relationships": {
@@ -126,6 +124,12 @@ def einrichten():
         angelegt["profile"].append(p["id"])
         json.dump(angelegt, open(LISTE, "w"))
         inhalt = base64.b64decode(p["attributes"]["profileContent"])
+        if kurz == "APP" and b"com.apple.developer.usernotifications.communication" not in inhalt:
+            # »Communication Notifications« ist an der App-ID (noch) nicht eingeschaltet – geht nur im Entwicklerportal.
+            # Ohne: Mitteilungen zeigen das App-Symbol statt ihres Profilbilds, der Build läuft trotzdem.
+            print("::warning::Communication Notifications an der App-ID aus – Mitteilungen ohne Profilbild")
+            subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Delete :com.apple.developer.usernotifications.communication",
+                            "CharacterDate/CharacterDate.entitlements"])
         for o in zielordner:
             open(os.path.join(o, p["attributes"]["uuid"] + ".mobileprovision"), "wb").write(inhalt)
         env_setzen("NX_PROFIL_" + kurz, name)
