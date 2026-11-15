@@ -204,6 +204,7 @@ final class Telefon {
         case "stopp":
             // Du hast dazwischengesprochen: ihre Stimme sofort verstummen lassen
             stimme.stop()
+            pufferSperre.lock(); ausstehend = 0; pufferSperre.unlock()
             if audioLaeuft { stimme.play() }
             pegelSie = 0
         case "fehler": info = d["text"] as? String
@@ -290,6 +291,10 @@ final class Telefon {
         }
     }
 
+    @ObservationIgnored private var ausstehend = 0
+    @ObservationIgnored private let pufferSperre = NSLock()
+    private func stueckFertig() { pufferSperre.lock(); ausstehend = max(0, ausstehend - 1); pufferSperre.unlock() }
+
     private func stimmeAbspielen(_ d: Data) {
         guard audioLaeuft, let f = stimmFormat else { return }
         let n = d.count / 2
@@ -307,7 +312,18 @@ final class Telefon {
         }
         let pegel = min(1, sqrt(summe / Float(n)) * 6)
         Task { @MainActor in self.pegelSie = pegel }
+        // Puffer gegen Stottern: ist die Warteschlange leer (Satzanfang oder leergelaufen), 140 ms Stille vorweg –
+        // dann fallen kleine Verzögerungen beim Rechnen der nächsten Stücke nicht als Lücke auf
+        pufferSperre.lock()
+        let leer = ausstehend == 0
+        ausstehend += leer ? 2 : 1
+        pufferSperre.unlock()
+        if leer, let still = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: AVAudioFrameCount(f.sampleRate * 0.14)) {
+            still.frameLength = still.frameCapacity          // mit Nullen gefüllt
+            stimme.scheduleBuffer(still, completionHandler: { [weak self] in self?.stueckFertig() })
+        }
         stimme.scheduleBuffer(p, completionHandler: { [weak self] in
+            self?.stueckFertig()
             Task { @MainActor in if let self, !self.stimme.isPlaying { self.pegelSie = 0 } }
         })
         if !stimme.isPlaying { stimme.play() }
