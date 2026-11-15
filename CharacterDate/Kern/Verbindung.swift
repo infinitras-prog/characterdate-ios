@@ -14,6 +14,9 @@ final class Verbindung {
     var adressen: [String] = UserDefaults.standard.stringArray(forKey: "pc_adressen") ?? []
     var basis: URL?
     var charaktere: [Charakter] = []
+    /// Wo du zuletzt etwas eingegeben hast (»pc« oder »iphone«): nur dort spricht sie / wird vorgelesen / klingt es.
+    var aktivesGeraet: String = "pc"
+    var iphoneAktiv: Bool { aktivesGeraet == "iphone" }
 
     private var schluessel: String? = Schluesselbund.lesen("geraet")
     private var socket: URLSessionWebSocketTask?
@@ -112,6 +115,8 @@ final class Verbindung {
             Ablage.schreiben(charaktere, "charaktere")
             zustand = .verbunden
             ereignisseStarten()
+            struct AG: Decodable { let geraet: String }
+            if let g: AG = try? await anfrage("/api/geraet/aktiv") { aktivesGeraet = g.geraet }
         } catch {
             if case .status(401, _)? = error as? Fehler { entkoppeln(); return }
             zustand = .offline(error.localizedDescription)
@@ -282,6 +287,7 @@ final class Verbindung {
 
     @MainActor
     private func verteilen(_ e: Ereignis) {
+        if e.typ == "aktives_geraet", let g = e.roh["geraet"] as? String { aktivesGeraet = g }
         if ["nachricht", "beziehung", "tippt"].contains(e.typ), let cid = e.charId, let i = charaktere.firstIndex(where: { $0.id == cid }) {
             if e.typ == "tippt" { charaktere[i].tippt = e.roh["an"] as? Bool }
             if e.typ == "nachricht", let n = e.nachricht {

@@ -112,6 +112,7 @@ struct Klingeln: Identifiable { let c: Charakter; let video: Bool; var id: Strin
 
 /// SIE ruft an: Vollbild mit pulsierendem Bild, Vibration im Klingel-Rhythmus, annehmen/ablehnen.
 struct KlingelAnsicht: View {
+    @Environment(Verbindung.self) private var v
     let k: Klingeln
     let annehmen: (Bool) -> Void
     let ablehnen: () -> Void
@@ -146,7 +147,7 @@ struct KlingelAnsicht: View {
                     UINotificationFeedbackGenerator().notificationOccurred(.warning)
                     try? await Task.sleep(for: .milliseconds(350))
                 }
-                AudioServicesPlaySystemSound(1007)
+                if v.iphoneAktiv { AudioServicesPlaySystemSound(1007) }     // am PC aktiv: nur vibrieren
                 try? await Task.sleep(for: .seconds(2))
             }
         }

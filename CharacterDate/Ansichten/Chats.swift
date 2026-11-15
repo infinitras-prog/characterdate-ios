@@ -99,8 +99,7 @@ struct ChatAnsicht: View {
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(Array(nachrichten.enumerated()), id: \.element.id) { i, m in
-                            if i == 0 || !Calendar.current.isDate(Date(timeIntervalSince1970: nachrichten[i - 1].zustellen),
-                                                                   inSameDayAs: Date(timeIntervalSince1970: m.zustellen)) {
+                            if neuerTag(i) {
                                 Text(tagText(m.zustellen)).font(.caption).foregroundStyle(Farbe.text3)
                                     .padding(.horizontal, 12).padding(.vertical, 4).background(.white.opacity(0.05), in: Capsule())
                                     .padding(.vertical, 8)
@@ -258,9 +257,7 @@ struct ChatAnsicht: View {
             }
             Button("Behalten", role: .cancel) { loeschen = nil }
         } message: {
-            Text((loeschen.map { gelesenBis >= $0.erstellt } ?? false)
-                 ? "\(c?.name ?? "Sie") hat die Nachricht schon gelesen – sie hat es gesehen."
-                 : "Noch ungelesen – \(c?.name ?? "sie") wird sie nie sehen.")
+            Text(loeschHinweis)
         }
         .task {
             vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true
@@ -285,7 +282,7 @@ struct ChatAnsicht: View {
                 case "nachricht":
                     if let n = e.nachricht, !nachrichten.contains(where: { $0.id == n.id }) {
                         nachrichten.append(n)
-                        if vorlesen && !n.vonMir && n.art == "text" && n.m("imAnruf") == nil
+                        if vorlesen && v.iphoneAktiv && !n.vonMir && n.art == "text" && n.m("imAnruf") == nil
                             && !n.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { vorlesenLassen(n.id) }
                     }
                 case "aktualisiert": if let n = e.nachricht, let i = nachrichten.firstIndex(where: { $0.id == n.id }) { nachrichten[i] = n }
@@ -400,11 +397,28 @@ struct ChatAnsicht: View {
                 Button { UIPasteboard.general.string = m.text } label: { Label("Kopieren", systemImage: "doc.on.doc") }
                 if ich {
                     Button(role: .destructive) { loeschen = m } label: {
-                        Label(gelesenBis >= m.erstellt ? "Löschen (schon gelesen)" : "Löschen – sie sieht es nie", systemImage: "trash")
+                        Label(loeschText(m), systemImage: "trash")
                     }
                 }
             }
         }
+    }
+
+    private func neuerTag(_ i: Int) -> Bool {
+        guard i > 0 else { return true }
+        let a = Date(timeIntervalSince1970: nachrichten[i - 1].zustellen)
+        let b = Date(timeIntervalSince1970: nachrichten[i].zustellen)
+        return !Calendar.current.isDate(a, inSameDayAs: b)
+    }
+
+    private var loeschHinweis: String {
+        let name = c?.name ?? "Sie"
+        if let m = loeschen, gelesenBis >= m.erstellt { return "\(name) hat die Nachricht schon gelesen – sie hat es gesehen." }
+        return "Noch ungelesen – \(name) wird sie nie sehen."
+    }
+
+    private func loeschText(_ m: Nachricht) -> String {
+        gelesenBis >= m.erstellt ? "Löschen (schon gelesen)" : "Löschen – sie sieht es nie"
     }
 
     private func blasenGrund(_ ich: Bool) -> AnyShapeStyle {
