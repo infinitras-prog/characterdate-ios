@@ -21,7 +21,7 @@ struct MusikKarte: View {
                         .frame(width: 40, height: 40).background(Farbe.verlauf, in: Circle()).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(ich ? "Dein Lied" : (m.m("titel")?.text ?? "Cover")).font(.subheadline.bold()).lineLimit(1)
+                    Text(ich ? (m.m("titel")?.text ?? "Dein Lied") : (m.m("titel")?.text ?? "Cover")).font(.subheadline.bold()).lineLimit(1)
                     Text(ich ? (m.text.isEmpty ? "zum Covern" : m.text) : (m.m("stil")?.text ?? ""))
                         .font(.caption2).foregroundStyle(Farbe.text2).lineLimit(2)
                 }
@@ -111,5 +111,32 @@ struct LiedBlatt: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             schliessen()
         } catch { fehler = error.localizedDescription }
+    }
+}
+
+/// Fehlgeschlagene Erstellung mit »Nochmal versuchen« (Cover, Foto, Video).
+struct Fehlgeschlagen: View {
+    @Environment(Verbindung.self) private var v
+    let m: Nachricht
+    let text: String
+    @State private var laeuft = false
+    @State private var fehler: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(text).font(.footnote)
+            if let f = fehler ?? m.m("fehler")?.text {
+                Text(String(f.prefix(160))).font(.caption2).foregroundStyle(Farbe.text3)
+            }
+            Button {
+                Task {
+                    laeuft = true
+                    do { _ = try await v.roh("/api/nachrichten/\(m.id)/nochmal", methode: "POST") }
+                    catch { fehler = error.localizedDescription; laeuft = false }
+                }
+            } label: { Label(laeuft ? "Startet …" : "Nochmal versuchen", systemImage: "arrow.clockwise") }
+                .font(.caption.bold()).disabled(laeuft)
+        }
+        .padding(10).glas(16)
     }
 }

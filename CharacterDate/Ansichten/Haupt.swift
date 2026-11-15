@@ -26,6 +26,8 @@ struct HauptAnsicht: View {
                     .tabItem { Label("Home", systemImage: "house") }.tag(0)
                 NavigationStack { ChatListe(auswahl: $chatMit) }
                     .tabItem { Label("Chats", systemImage: "bubble.left") }.tag(1)
+                NavigationStack { SwipeAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 }) }
+                    .tabItem { Label("Swipe", systemImage: "flame") }.tag(5)
                 NavigationStack { ErstellenAnsicht(fertig: { c in chatMit = c; tab = 1 }) }
                     .tabItem { Label("Char erstellen", systemImage: "plus.circle") }.tag(2)
                 NavigationStack { GalerieAnsicht() }

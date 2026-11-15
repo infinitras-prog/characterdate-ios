@@ -337,13 +337,13 @@ struct ChatAnsicht: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .onTapGesture { gross = GrossesBild(pfad: pfad, bildId: m.m("bildId")?.text) }
             } else {
-                Text("📷 Das Foto ist nicht geworden.").font(.footnote).padding(10).glas(16)
+                Fehlgeschlagen(m: m, text: "📷 Das Foto ist nicht geworden.")
             }
         case "musik":
             if !ich && m.m("status")?.text == "entsteht" {
                 ErstellungsKarte(nid: m.id, titel: "Ihr Cover", symbol: "music.note")
             } else if !ich && m.m("status")?.text == "fehler" {
-                Text("🎵 Das Cover ist nicht geworden.").font(.footnote).padding(10).glas(16)
+                Fehlgeschlagen(m: m, text: "🎵 Das Cover ist nicht geworden.")
             } else {
                 MusikKarte(m: m)
             }
@@ -355,7 +355,7 @@ struct ChatAnsicht: View {
             } else if let pfad = m.m("video")?.text {
                 ChatVideo(pfad: pfad).frame(width: 230, height: 330).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
-                Text("🎬 Das Video ist nicht geworden.").font(.footnote).padding(10).glas(16)
+                Fehlgeschlagen(m: m, text: "🎬 Das Video ist nicht geworden.")
             }
         case "sprache":
             VStack(alignment: .leading, spacing: 6) {
