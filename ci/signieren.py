@@ -14,8 +14,9 @@ import base64, json, os, subprocess, sys, time, urllib.error, urllib.request
 import jwt  # PyJWT (auf dem Build-Rechner installiert)
 
 API = "https://api.appstoreconnect.apple.com/v1"
-BUNDLES = {"APP": "de.infinitras.characterdate", "WIDGET": "de.infinitras.characterdate.widget"}
-NAMEN = {"APP": "CharacterDate AI", "WIDGET": "CharacterDate Widget"}         # App-ID legt der Lauf selbst an, falls sie fehlt
+BUNDLES = {"APP": "de.infinitras.characterdate", "WIDGET": "de.infinitras.characterdate.widget",
+           "PUSH": "de.infinitras.characterdate.push"}
+NAMEN = {"APP": "CharacterDate AI", "WIDGET": "CharacterDate Widget", "PUSH": "CharacterDate Mitteilungen"}         # App-ID legt der Lauf selbst an, falls sie fehlt
 TMP = os.environ.get("RUNNER_TEMP", "/tmp")
 ORDNER = os.path.join(TMP, "signatur")
 LISTE = os.path.join(ORDNER, "angelegt.json")
@@ -115,6 +116,8 @@ def einrichten():
             print("App-ID angelegt:", bundle)
         if not treffer:
             raise SystemExit("::error::App-ID %s fehlt im Entwicklerportal" % bundle)
+        if kurz == "APP":
+            faehigkeit_sicherstellen(treffer[0]["id"], "USERNOTIFICATIONS_COMMUNICATION")
         name = "CharacterDate CI %s %s" % (lauf, kurz.lower())
         p = api("POST", "/profiles", {"data": {"type": "profiles", "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
                                                 "relationships": {
@@ -128,6 +131,22 @@ def einrichten():
         env_setzen("NX_PROFIL_" + kurz, name)
         print("Profil angelegt:", name)
     env_setzen("NX_KEYCHAIN", KC)
+
+
+def faehigkeit_sicherstellen(bundle_id, art):
+    """Fähigkeit an der App-ID einschalten (z. B. Mitteilungen mit Profilbild). Klappt das nicht, wird die
+    Berechtigung aus dem Projekt genommen – der Build läuft dann ohne (Mitteilungen mit App-Symbol)."""
+    try:
+        da = api("GET", "/bundleIds/%s/bundleIdCapabilities?limit=100" % bundle_id).get("data", [])
+        if any(c["attributes"].get("capabilityType") == art for c in da):
+            return
+        api("POST", "/bundleIdCapabilities", {"data": {"type": "bundleIdCapabilities", "attributes": {"capabilityType": art},
+                                                       "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+        print("Fähigkeit eingeschaltet:", art)
+    except SystemExit as e:
+        print("::warning::%s nicht einschaltbar – ohne weiter (%s)" % (art, e))
+        for f in ("CharacterDate/CharacterDate.entitlements",):
+            subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Delete :com.apple.developer.usernotifications.communication", f])
 
 
 def aufraeumen():

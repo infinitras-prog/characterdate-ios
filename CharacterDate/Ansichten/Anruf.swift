@@ -24,34 +24,43 @@ struct AnrufAnsicht: View {
     var body: some View {
         ZStack {
             Farbe.grund.ignoresSafeArea()
-            if video, gesicht.aktiv {
-                // Lebendiges Gesicht (LivePortrait am PC) – bis das erste Bild da ist, steht das Szenenbild dahinter
-                if let portraet, gesicht.bild == nil {
-                    Image(uiImage: portraet).resizable().scaledToFill().ignoresSafeArea().blur(radius: 6)
+            // Chat offen im Videoanruf: Video rückt in die obere Hälfte – ihr Gesicht bleibt frei, der Chat liegt darunter
+            GeometryReader { geo in
+                ZStack {
+                    if video, gesicht.aktiv {
+                        // Lebendiges Gesicht (LivePortrait am PC) – bis das erste Bild da ist, steht das Szenenbild dahinter
+                        if let portraet, gesicht.bild == nil {
+                            Image(uiImage: portraet).resizable().scaledToFill().ignoresSafeArea().blur(radius: 6)
+                        }
+                        LiveGesichtAnsicht(strom: gesicht).ignoresSafeArea().transition(.opacity)
+                        LinearGradient(colors: [.black.opacity(0.45), .clear, .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                            .ignoresSafeArea()
+                    } else if video, clips.bereit {
+                        ClipAnsicht(spieler: clips.spieler).ignoresSafeArea().transition(.opacity)
+                        LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                            .ignoresSafeArea()
+                    } else if video, let portraet {
+                        // Videoanruf: ihr Profilbild lebt (Mund nach Stimme, Blinzeln, Kopfbewegung)
+                        LebendigesPortraet(bild: portraet, pegel: { telefon.pegelSie }, aktiv: telefon.zustand == .aktiv)
+                            .id(bildKennung)                       // neues Szenenbild → Animation neu aufbauen
+                            .transition(.opacity)
+                            .ignoresSafeArea()
+                        if let ort {
+                            VStack { HStack { Label(ort, systemImage: "mappin.and.ellipse").font(.caption).padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(.ultraThinMaterial, in: Capsule()); Spacer() }; Spacer() }
+                                .padding(.top, 60).padding(.leading, 16)
+                        }
+                        LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                            .ignoresSafeArea()
+                    } else if let a = c.avatarUrl {
+                        NetzBild(pfad: a).ignoresSafeArea().blur(radius: 40).opacity(0.55).scaleEffect(1.2)
+                    }
                 }
-                LiveGesichtAnsicht(strom: gesicht).ignoresSafeArea().transition(.opacity)
-                LinearGradient(colors: [.black.opacity(0.45), .clear, .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-            } else if video, clips.bereit {
-                ClipAnsicht(spieler: clips.spieler).ignoresSafeArea().transition(.opacity)
-                LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-            } else if video, let portraet {
-                // Videoanruf: ihr Profilbild lebt (Mund nach Stimme, Blinzeln, Kopfbewegung)
-                LebendigesPortraet(bild: portraet, pegel: { telefon.pegelSie }, aktiv: telefon.zustand == .aktiv)
-                    .id(bildKennung)                       // neues Szenenbild → Animation neu aufbauen
-                    .transition(.opacity)
-                    .ignoresSafeArea()
-                if let ort {
-                    VStack { HStack { Label(ort, systemImage: "mappin.and.ellipse").font(.caption).padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule()); Spacer() }; Spacer() }
-                        .padding(.top, 60).padding(.leading, 16)
-                }
-                LinearGradient(colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-            } else if let a = c.avatarUrl {
-                NetzBild(pfad: a).ignoresSafeArea().blur(radius: 40).opacity(0.55).scaleEffect(1.2)
+                .frame(width: geo.size.width, height: video && tippen ? geo.size.height * 0.47 : geo.size.height, alignment: .top)
+                .clipped()
+                .animation(.spring(duration: 0.4), value: tippen)
             }
+            .ignoresSafeArea()
             LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
 
@@ -82,7 +91,7 @@ struct AnrufAnsicht: View {
                 if !video {
                     if tippen { Avatar(c: c, groesse: 72).transition(.scale.combined(with: .opacity)) } else { ring }
                 }
-                Text(c.name).font(.system(size: 32, weight: .semibold))
+                Text(c.name).font(.system(size: video && tippen ? 20 : 32, weight: .semibold))
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text(statusText).font(.headline.monospacedDigit()).foregroundStyle(Farbe.text2)
                 }
@@ -250,7 +259,7 @@ struct AnrufAnsicht: View {
                     if let letzte = l.last { withAnimation(.easeOut(duration: 0.2)) { leser.scrollTo(letzte.id, anchor: .bottom) } }
                 }
             }
-            .frame(maxHeight: video ? 230 : 300)
+            .frame(maxHeight: video ? 260 : 300)
             tippZeile
         }
         .padding(10)

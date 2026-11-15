@@ -73,6 +73,7 @@ struct ChatAnsicht: View {
     @State private var anruf = false
     @State private var anrufMit: Charakter?       // fest beim Wählen gemerkt – unabhängig davon, ob die Liste kurz neu lädt
     @State private var mitVideo = false
+    @State private var loeschen: Nachricht?
     @State private var keineStimme = false
     @State private var vorlesen = false
     @State private var stimmeWaehlen = false
@@ -246,6 +247,21 @@ struct ChatAnsicht: View {
         } message: {
             Text("Bis zu 30 Sekunden klare Sprache ohne Musik werden genutzt – je länger, desto genauer wird die Stimme kopiert.")
         }
+        .confirmationDialog("Nachricht löschen?", isPresented: Binding(get: { loeschen != nil }, set: { if !$0 { loeschen = nil } }),
+                            titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                if let m = loeschen {
+                    Task { _ = try? await v.roh("/api/nachrichten/\(m.id)", methode: "DELETE") }
+                    withAnimation { nachrichten.removeAll { $0.id == m.id } }
+                }
+                loeschen = nil
+            }
+            Button("Behalten", role: .cancel) { loeschen = nil }
+        } message: {
+            Text((loeschen.map { gelesenBis >= $0.erstellt } ?? false)
+                 ? "\(c?.name ?? "Sie") hat die Nachricht schon gelesen – sie hat es gesehen."
+                 : "Noch ungelesen – \(c?.name ?? "sie") wird sie nie sehen.")
+        }
         .task {
             vorlesen = UserDefaults.standard.bool(forKey: vorleseSchluessel) && c?.hatStimme == true
             struct DS: Decodable { let date: DateInfo? }
@@ -382,6 +398,11 @@ struct ChatAnsicht: View {
                     }
                 }
                 Button { UIPasteboard.general.string = m.text } label: { Label("Kopieren", systemImage: "doc.on.doc") }
+                if ich {
+                    Button(role: .destructive) { loeschen = m } label: {
+                        Label(gelesenBis >= m.erstellt ? "Löschen (schon gelesen)" : "Löschen – sie sieht es nie", systemImage: "trash")
+                    }
+                }
             }
         }
     }

@@ -40,6 +40,7 @@ targets:
         UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
         UIBackgroundModes: [audio, remote-notification]
+        NSUserActivityTypes: [INSendMessageIntent]
         CFBundleURLTypes:
           - CFBundleURLName: de.infinitras.characterdate
             CFBundleURLSchemes: [characterdate]
@@ -57,6 +58,7 @@ targets:
       properties:
         com.apple.security.application-groups: [group.de.infinitras.characterdate]
         aps-environment: $(APS_ENVIRONMENT)
+        com.apple.developer.usernotifications.communication: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate
@@ -70,6 +72,7 @@ targets:
           APS_ENVIRONMENT: production
     dependencies:
       - target: CharacterDateWidget
+      - target: CharacterDatePush
   CharacterDateWidget:
     type: app-extension
     platform: iOS
@@ -92,4 +95,23 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate.widget
         PROVISIONING_PROFILE_SPECIFIER: $(NX_PROFIL_WIDGET)
+        SKIP_INSTALL: YES
+  CharacterDatePush:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CharacterDatePush
+    info:
+      path: CharacterDatePush/Info.plist
+      properties:
+        CFBundleDisplayName: CharacterDate
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.infinitras.characterdate.push
+        PROVISIONING_PROFILE_SPECIFIER: $(NX_PROFIL_PUSH)
         SKIP_INSTALL: YES
