@@ -60,31 +60,41 @@ enum Lumi {
     }
 }
 
-// MARK: - Hauptansicht
+// MARK: - Hauptansicht (Aufbau wie die Instagram-App am iPhone)
+
+enum IG {
+    static let blau = Color(red: 0, green: 0.584, blue: 0.965)
+    static let grau = Color(white: 0.66)
+    static let feld = Color(white: 0.15)
+    static let linie = Color(white: 0.15)
+    static let ring = AngularGradient(colors: [Color(red: 1, green: 0.84, blue: 0), Color(red: 1, green: 0.48, blue: 0),
+                                               Color(red: 1, green: 0, blue: 0.41), Color(red: 0.83, green: 0, blue: 0.77),
+                                               Color(red: 0.46, green: 0.22, blue: 0.98), Color(red: 1, green: 0.84, blue: 0)],
+                                      center: .center)
+    static func logo(_ groesse: CGFloat = 30) -> some View {
+        Text("Lumigram").font(.custom("SnellRoundhand-Bold", size: groesse)).foregroundStyle(.white)
+    }
+}
 
 struct LumigramAnsicht: View {
     @Environment(Verbindung.self) private var v
     var chatOeffnen: (Charakter) -> Void = { _ in }
+    var zurueck: () -> Void = {}
+    var zuChats: () -> Void = {}
     @State private var ich: LumiKonto?
     @State private var geladen = false
     @State private var tab = 0
     @State private var pfad = NavigationPath()
 
     var body: some View {
-        NavigationStack(path: $pfad) {
-            Group {
-                if !geladen {
-                    ProgressView().tint(.white)
-                } else if ich == nil {
-                    LumiAnmelden { await laden() }
-                } else {
-                    VStack(spacing: 0) {
-                        Picker("", selection: $tab) {
-                            Image(systemName: "house.fill").tag(0)
-                            Image(systemName: "magnifyingglass").tag(1)
-                            Image(systemName: "person.crop.circle").tag(2)
-                        }
-                        .pickerStyle(.segmented).padding(.horizontal, 16).padding(.vertical, 8)
+        VStack(spacing: 0) {
+            NavigationStack(path: $pfad) {
+                Group {
+                    if !geladen {
+                        ProgressView().tint(.white)
+                    } else if ich == nil {
+                        LumiAnmelden { await laden() }
+                    } else {
                         switch tab {
                         case 0: LumiFeed(pfad: $pfad)
                         case 1: LumiSuche(pfad: $pfad)
@@ -92,15 +102,61 @@ struct LumigramAnsicht: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        HStack(spacing: 6) {
+                            Button { zurueck() } label: { Image(systemName: "chevron.left").font(.body.weight(.semibold)) }
+                                .accessibilityLabel("Zurück zu CharacterDate")
+                            if tab == 2, let ich { Text(ich.name).font(.title3.bold()) } else { IG.logo(28) }
+                        }
+                    }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { tab = 1 } label: { Image(systemName: "heart").font(.title3) }.accessibilityLabel("Aktivität")
+                        Button { zuChats() } label: { Image(systemName: "paperplane").font(.title3) }.accessibilityLabel("Nachrichten")
+                    }
+                }
+                .toolbarBackground(Color.black, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: String.self) { kid in LumiKontoAnsicht(id: kid, pfad: $pfad, chatOeffnen: chatOeffnen) }
+                .navigationDestination(for: LumiPost.self) { p in LumiPostAnsicht(post: p, pfad: $pfad) }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Hintergrund())
-            .toolbar { ToolbarItem(placement: .principal) { Lumi.logo } }
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: String.self) { kid in LumiKontoAnsicht(id: kid, pfad: $pfad, chatOeffnen: chatOeffnen) }
-            .navigationDestination(for: LumiPost.self) { p in LumiPostAnsicht(post: p, pfad: $pfad) }
+            if ich != nil {
+                // eigene Leiste unten wie in der Instagram-App
+                HStack {
+                    leistenKnopf(0, "house", "house.fill")
+                    leistenKnopf(1, "magnifyingglass", "magnifyingglass")
+                    Button { } label: { Image(systemName: "plus.app").font(.title2) }.frame(maxWidth: .infinity).opacity(0.35)
+                        .accessibilityLabel("Beitrag erstellen (kommt bald)")
+                    Button { } label: { Image(systemName: "play.rectangle").font(.title2) }.frame(maxWidth: .infinity).opacity(0.35)
+                        .accessibilityLabel("Reels (kommt bald)")
+                    Button { pfad = NavigationPath(); tab = 2 } label: {
+                        LumiAvatar(k: LumiKontoKurz(id: ich!.id, name: ich!.name, anzeige: nil, avatar: ich!.avatar), groesse: 26, ring: false)
+                            .overlay(Circle().stroke(.white, lineWidth: tab == 2 ? 1.5 : 0).padding(-2))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .foregroundStyle(.white)
+                .padding(.top, 10).padding(.bottom, 4)
+                .background(Color.black.overlay(alignment: .top) { IG.linie.frame(height: 0.5) })
+            }
         }
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .toolbar(.hidden, for: .tabBar)
         .task { await laden() }
+    }
+
+    private func leistenKnopf(_ i: Int, _ aus: String, _ an: String) -> some View {
+        Button {
+            if tab == i { pfad = NavigationPath() }
+            tab = i
+        } label: {
+            Image(systemName: tab == i ? an : aus).font(.title2.weight(tab == i ? .bold : .regular))
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @MainActor private func laden() async {
@@ -150,49 +206,96 @@ private struct LumiFeed: View {
     @Environment(Verbindung.self) private var v
     @Binding var pfad: NavigationPath
     @State private var posts: [LumiPost]?
+    @State private var gefolgt: [LumiGefolgt] = []
+    @State private var lager = StoryLager()
+    @State private var storyVon: Charakter?
 
     var body: some View {
         ScrollView {
-            if let posts {
-                if posts.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass").font(.largeTitle)
-                        Text("Noch niemand im Feed").font(.headline)
-                        Text("Frag deine Charaktere im Chat nach ihrem Lumigram-Namen und such sie dann.")
-                            .font(.footnote).foregroundStyle(Farbe.text3).multilineTextAlignment(.center)
+            LazyVStack(spacing: 0) {
+                storyLeiste
+                if let posts {
+                    if posts.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "camera.circle").font(.system(size: 60, weight: .thin))
+                            Text("Willkommen bei Lumigram").font(.title3.bold())
+                            Text("Frag deine Charaktere im Chat nach ihrem Lumigram-Namen und such sie dann über die Lupe.")
+                                .font(.subheadline).foregroundStyle(IG.grau).multilineTextAlignment(.center)
+                        }
+                        .padding(40)
+                    } else {
+                        ForEach(posts) { p in LumiPostKarte(post: p, pfad: $pfad).padding(.bottom, 14) }
                     }
-                    .padding(40)
                 } else {
-                    LazyVStack(spacing: 20) {
-                        ForEach(posts) { p in LumiPostKarte(post: p, pfad: $pfad) }
-                    }
-                    .padding(.vertical, 8)
+                    ProgressView().tint(.white).padding(60)
                 }
-            } else {
-                ProgressView().tint(.white).padding(60)
             }
         }
+        .background(Color.black)
         .refreshable { await laden() }
         .task { await laden() }
+        .fullScreenCover(item: $storyVon) { c in
+            StoryBetrachter(c: c, storys: lager.storys[c.id] ?? []) { sid in
+                if var l = lager.storys[c.id], let k = l.firstIndex(where: { $0.id == sid }) { l[k].gesehen = true; lager.storys[c.id] = l }
+            }
+        }
+    }
+
+    @ViewBuilder private var storyLeiste: some View {
+        let mit = gefolgt.filter { g in g.charId.map { !(lager.storys[$0] ?? []).isEmpty } ?? false }
+        if !mit.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(mit) { g in
+                        Button {
+                            if let cid = g.charId, let c = v.charaktere.first(where: { $0.id == cid }) { storyVon = c }
+                        } label: {
+                            VStack(spacing: 5) {
+                                LumiAvatar(k: LumiKontoKurz(id: g.id, name: g.name, anzeige: g.anzeige, avatar: g.avatar), groesse: 64,
+                                           ring: true, gesehen: !(lager.storys[g.charId ?? ""] ?? []).contains { !$0.gesehen })
+                                Text(g.name).font(.caption2).lineLimit(1).frame(width: 74)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
+            IG.linie.frame(height: 0.5).padding(.bottom, 8)
+        }
     }
 
     @MainActor private func laden() async {
         if let f: FeedHuelle = try? await v.anfrage("/api/lumi/feed") { posts = f.posts } else if posts == nil { posts = [] }
+        if let g: GefolgtHuelle = try? await v.anfrage("/api/lumi/gefolgt") { gefolgt = g.konten }
+        await lager.laden(v)
     }
 }
+
+struct LumiGefolgt: Decodable, Identifiable { let id: String; let name: String; let anzeige: String?; let charId: String?; let avatar: String?; let folgtMir: Bool? }
+private struct GefolgtHuelle: Decodable { let konten: [LumiGefolgt] }
 
 struct LumiAvatar: View {
     let k: LumiKontoKurz
     var groesse: CGFloat = 34
+    var ring: Bool = true
+    var gesehen: Bool = false
     var body: some View {
-        ZStack {
-            if let a = k.avatar { NetzBild(pfad: a) } else {
-                Circle().fill(Farbe.verlauf)
-                Text(String(k.name.prefix(1)).uppercased()).font(.system(size: groesse * 0.42, weight: .bold))
+        let bild = ZStack {
+            if let a = k.avatar { Color.clear.overlay { NetzBild(pfad: a) } } else {
+                Circle().fill(Color(white: 0.25))
+                Text(String(k.name.prefix(1)).uppercased()).font(.system(size: groesse * 0.42, weight: .semibold))
             }
         }
         .frame(width: groesse, height: groesse).clipShape(Circle())
-        .overlay(Circle().stroke(Farbe.rose, lineWidth: 1.5).padding(-2.5))
+        if ring {
+            bild.padding(groesse > 40 ? 3 : 2)
+                .background(Circle().fill(Color.black))
+                .padding(groesse > 40 ? 2.5 : 2)
+                .background(Circle().fill(gesehen ? AnyShapeStyle(Color(white: 0.3)) : AnyShapeStyle(IG.ring)))
+        } else {
+            bild
+        }
     }
 }
 
@@ -206,18 +309,20 @@ struct LumiPostKarte: View {
         VStack(alignment: .leading, spacing: 8) {
             Button { pfad.append(post.konto.id) } label: {
                 HStack(spacing: 10) {
-                    LumiAvatar(k: post.konto)
+                    LumiAvatar(k: post.konto, groesse: 32)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(post.konto.name).font(.subheadline.bold())
-                        if !post.ort.isEmpty { Label(post.ort, systemImage: "mappin").font(.caption2).foregroundStyle(Farbe.text3) }
+                        Text(post.konto.name).font(.footnote.weight(.semibold))
+                        if !post.ort.isEmpty { Text(post.ort).font(.caption2) }
                     }
                     Spacer()
+                    Image(systemName: "ellipsis").font(.footnote)
                 }
             }
             .buttonStyle(.plain).padding(.horizontal, 12)
             ZStack {
                 if let m = post.medien.first {
-                    NetzBild(pfad: m).aspectRatio(4 / 5, contentMode: .fill).frame(maxWidth: .infinity).clipped()
+                    Color.clear.aspectRatio(4 / 5, contentMode: .fit).frame(maxWidth: .infinity)
+                        .overlay { NetzBild(pfad: m) }.clipped()
                 } else {
                     Text(post.text).font(.title3).padding(30).frame(maxWidth: .infinity, minHeight: 240)
                         .background(Farbe.verlauf.opacity(0.4))
@@ -234,12 +339,14 @@ struct LumiPostKarte: View {
             }
             HStack(spacing: 16) {
                 Button { Task { await liken(!post.geliked) } } label: {
-                    Image(systemName: post.geliked ? "heart.fill" : "heart").font(.title3)
-                        .foregroundStyle(post.geliked ? Color(red: 1, green: 0.23, blue: 0.42) : .white)
+                    Image(systemName: post.geliked ? "heart.fill" : "heart").font(.title2)
+                        .foregroundStyle(post.geliked ? Color(red: 1, green: 0.19, blue: 0.25) : .white)
                         .symbolEffect(.bounce, value: post.geliked)
                 }
-                Button { pfad.append(post) } label: { Image(systemName: "bubble.right").font(.title3) }
+                Button { pfad.append(post) } label: { Image(systemName: "bubble.right").font(.title2) }
+                Image(systemName: "paperplane").font(.title2)
                 Spacer()
+                Image(systemName: "bookmark").font(.title2)
             }
             .buttonStyle(.plain).padding(.horizontal, 12)
             VStack(alignment: .leading, spacing: 4) {
@@ -247,9 +354,9 @@ struct LumiPostKarte: View {
                 if !post.text.isEmpty { (Text(post.konto.name).bold() + Text(" " + post.text)).font(.footnote) }
                 if post.kommentare > 0 {
                     Button("Alle \(post.kommentare) Kommentare ansehen") { pfad.append(post) }
-                        .font(.footnote).foregroundStyle(Farbe.text3)
+                        .font(.footnote).foregroundStyle(IG.grau)
                 }
-                Text(Lumi.vor(post.zeit)).font(.caption2).foregroundStyle(Farbe.text3)
+                Text(Lumi.vor(post.zeit)).font(.caption2).foregroundStyle(IG.grau)
             }
             .padding(.horizontal, 12)
         }
@@ -276,17 +383,26 @@ private struct LumiSuche: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(Farbe.text2)
-                TextField("@nutzername – genau wie sie ihn verraten hat", text: $q)
+                Image(systemName: "magnifyingglass").foregroundStyle(IG.grau)
+                TextField("Suchen", text: $q)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
                     .onSubmit { Task { await suchen() } }
+                if !q.isEmpty { Button { q = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(IG.grau) } }
             }
-            .padding(12).glas(14)
-            Button("Suchen") { Task { await suchen() } }.buttonStyle(HauptKnopf()).disabled(q.count < 3)
-            if nichts { Text("Kein Konto mit genau diesem Namen.").font(.footnote).foregroundStyle(.orange) }
+            .padding(.horizontal, 12).frame(height: 38).background(IG.feld, in: RoundedRectangle(cornerRadius: 10))
+            if nichts {
+                VStack(spacing: 6) {
+                    Text("Keine Ergebnisse").font(.headline)
+                    Text("Kein Konto heißt genau @\(q.replacingOccurrences(of: "@", with: "")).").font(.footnote).foregroundStyle(IG.grau)
+                }.padding(.top, 30)
+            } else {
+                Text("Gib den genauen Nutzernamen ein, den sie dir im Chat verraten hat.")
+                    .font(.footnote).foregroundStyle(IG.grau).multilineTextAlignment(.center).padding(.top, 30)
+            }
             Spacer()
         }
-        .padding(20)
+        .padding(.horizontal, 12).padding(.top, 6)
+        .background(Color.black)
     }
 
     @MainActor private func suchen() async {
@@ -311,35 +427,44 @@ struct LumiKontoAnsicht: View {
         ScrollView {
             if let k {
                 VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 24) {
-                        LumiAvatar(k: LumiKontoKurz(id: k.id, name: k.name, anzeige: k.anzeige, avatar: k.avatar), groesse: 84)
-                        HStack(spacing: 22) {
-                            zahl(k.postsAnzahl, "Beiträge"); zahl(k.follower, "Follower"); zahl(k.folgt, "Gefolgt")
+                        LumiAvatar(k: LumiKontoKurz(id: k.id, name: k.name, anzeige: k.anzeige, avatar: k.avatar), groesse: 84, ring: !k.istIch)
+                        HStack(spacing: 0) {
+                            zahl(k.postsAnzahl, "Beiträge").frame(maxWidth: .infinity)
+                            zahl(k.follower, "Follower").frame(maxWidth: .infinity)
+                            zahl(k.folgt, "Gefolgt").frame(maxWidth: .infinity)
                         }
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(k.anzeige.isEmpty ? k.name : k.anzeige).font(.subheadline.bold())
-                        Text("@" + k.name).font(.caption).foregroundStyle(Farbe.text3)
-                        if !k.bio.isEmpty { Text(k.bio).font(.footnote).padding(.top, 4) }
+                        Text(k.anzeige.isEmpty ? k.name : k.anzeige).font(.footnote.weight(.semibold))
+                        if !k.bio.isEmpty { Text(k.bio).font(.footnote) }
                     }
                     if !k.istIch {
                         HStack(spacing: 8) {
                             Button { Task { await folgen(!k.ichFolge) } } label: {
-                                Text(k.ichFolge ? "Gefolgt" : k.folgtMir ? "Zurückfolgen" : "Folgen").frame(maxWidth: .infinity)
+                                Text(k.ichFolge ? "Gefolgt" : k.folgtMir ? "Zurückfolgen" : "Folgen")
+                                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).frame(height: 34)
+                                    .background(k.ichFolge ? IG.feld : IG.blau, in: RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(HauptKnopf(farbe: k.ichFolge ? AnyShapeStyle(Color.white.opacity(0.12)) : AnyShapeStyle(Farbe.verlauf)))
                             if let cid = k.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
-                                Button { chatOeffnen(c) } label: { Text("Nachricht").frame(maxWidth: .infinity) }
-                                    .buttonStyle(HauptKnopf(farbe: AnyShapeStyle(Color.white.opacity(0.12))))
+                                Button { chatOeffnen(c) } label: {
+                                    Text("Nachricht").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).frame(height: 34)
+                                        .background(IG.feld, in: RoundedRectangle(cornerRadius: 8))
+                                }
                             }
                         }
-                        if k.folgtMir { Text("folgt dir").font(.caption2).foregroundStyle(Farbe.text3) }
+                        if k.folgtMir { Text("Folgt dir").font(.caption2).foregroundStyle(IG.grau) }
                     }
-                    Divider().overlay(Farbe.linie)
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+                    }
+                    .padding(.horizontal, 16)
+                    HStack { Spacer(); Image(systemName: "squareshape.split.3x3").font(.title3); Spacer() }
+                        .padding(.vertical, 10)
+                        .overlay(alignment: .bottom) { Rectangle().fill(.white).frame(height: 1).frame(maxWidth: 120) }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1.5), count: 3), spacing: 1.5) {
                         ForEach(k.posts) { p in
                             Button { pfad.append(p) } label: {
-                                Color.clear.aspectRatio(4 / 5, contentMode: .fit)
+                                Color.clear.aspectRatio(3 / 4, contentMode: .fit)
                                     .overlay { if let m = p.medien.first { NetzBild(pfad: m) } else { Text(p.text).font(.caption2).padding(6) } }
                                     .clipped()
                             }
@@ -347,12 +472,12 @@ struct LumiKontoAnsicht: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(.top, 12)
             } else {
                 ProgressView().tint(.white).padding(60)
             }
         }
-        .background(Hintergrund())
+        .background(Color.black)
         .refreshable { await laden() }
         .task { await laden() }
     }
@@ -391,7 +516,7 @@ private struct LumiPostAnsicht: View {
                             LumiAvatar(k: c.konto, groesse: 28)
                             VStack(alignment: .leading, spacing: 2) {
                                 (Text(c.konto.name).bold() + Text(" " + c.text)).font(.footnote)
-                                Text(Lumi.vor(c.zeit)).font(.caption2).foregroundStyle(Farbe.text3)
+                                Text(Lumi.vor(c.zeit)).font(.caption2).foregroundStyle(IG.grau)
                             }
                             Spacer()
                         }
@@ -406,7 +531,7 @@ private struct LumiPostAnsicht: View {
             }
             .padding(12).background(.ultraThinMaterial)
         }
-        .background(Hintergrund())
+        .background(Color.black)
         .navigationTitle("Beitrag").navigationBarTitleDisplayMode(.inline)
         .task {
             while !Task.isCancelled {

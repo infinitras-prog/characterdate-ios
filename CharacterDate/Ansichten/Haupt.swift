@@ -28,7 +28,7 @@ struct HauptAnsicht: View {
                     .tabItem { Label("Chats", systemImage: "bubble.left") }.tag(1)
                 NavigationStack { SwipeAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 }) }
                     .tabItem { Label("Swipe", systemImage: "flame") }.tag(5)
-                LumigramAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 })
+                LumigramAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 }, zurueck: { tab = 0 }, zuChats: { tab = 1 })
                     .tabItem { Label("Lumigram", systemImage: "camera.aperture") }.tag(6)
                 NavigationStack { ErstellenAnsicht(fertig: { c in chatMit = c; tab = 1 }) }
                     .tabItem { Label("Char erstellen", systemImage: "plus.circle") }.tag(2)
@@ -51,9 +51,12 @@ struct HauptAnsicht: View {
             }
             Push.shared.anmeldenWennMoeglich = { Task { await Push.shared.anmelden(v) } }
         }
-        .overlay(alignment: .topTrailing) {
-            if v.zustand == .verbunden && chatMit == nil {
-                RegieKnopf().padding(.trailing, 14).padding(.top, 4)
+        .overlay(alignment: .bottomTrailing) {
+            // Chip-Knopf (Sprachmodell) unten rechts über der Tab-Leiste – stört dort keine Überschriften/Bilder.
+            // In Swipe und Lumigram liegen unten eigene Knöpfe → dort ausgeblendet.
+            if v.zustand == .verbunden && chatMit == nil && tab != 5 && tab != 6 {
+                RegieKnopf().padding(.trailing, 16).padding(.bottom, 96)
+                    .transition(.scale.combined(with: .opacity))
             }
         }
         .task(id: v.zustand) {
@@ -301,11 +304,12 @@ struct MiniKarte: View {
     let c: Charakter
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            NetzBild(pfad: c.avatarUrl)
+            // Bild als Überlagerung: füllt die Karte, ohne sie breiter zu machen (sonst rutscht der Name aus dem Bild)
+            Color.clear.overlay { NetzBild(pfad: c.avatarUrl) }.clipped()
             LinearGradient(colors: [.clear, Farbe.grund.opacity(0.9)], startPoint: .center, endPoint: .bottom)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.name).font(.headline)
+                    Text(c.name).font(.headline).lineLimit(2).minimumScaleFactor(0.8)
                     Text("♡ Lv. \(c.beziehung.level)").font(.caption).foregroundStyle(Farbe.rose)
                 }
                 Spacer()

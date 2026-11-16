@@ -54,7 +54,11 @@ struct StoryBetrachter: View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             if i < storys.count, let b = bilder[storys[i].url] {
-                Image(uiImage: b).resizable().scaledToFill().ignoresSafeArea().id(storys[i].id).transition(.opacity)
+                // Bild füllt den Bildschirm, ohne die Ansicht breiter zu machen (sonst werden Name und Text abgeschnitten)
+                Color.clear.ignoresSafeArea()
+                    .overlay { Image(uiImage: b).resizable().scaledToFill().ignoresSafeArea() }
+                    .clipped()
+                    .id(storys[i].id).transition(.opacity)
             } else {
                 ProgressView().tint(.white).frame(maxHeight: .infinity)
             }
@@ -73,14 +77,15 @@ struct StoryBetrachter: View {
                 }
                 HStack(spacing: 8) {
                     Avatar(c: c, groesse: 32)
-                    Text(c.name).font(.subheadline.bold())
-                    if i < storys.count { Text("\(uhrzeit(storys[i].erstellt)) · \(storys[i].ort)").font(.caption).opacity(0.75) }
+                    Text(c.name).font(.subheadline.bold()).lineLimit(1)
+                    if i < storys.count { Text("\(uhrzeit(storys[i].erstellt)) · \(storys[i].ort)").font(.caption).opacity(0.75).lineLimit(1) }
                     Spacer()
                     Button { schliessen() } label: { Image(systemName: "xmark").font(.title3) }
                 }
                 Spacer()
                 if i < storys.count, !storys[i].text.isEmpty {
                     Text(storys[i].text).font(.body).multilineTextAlignment(.center).padding(12)
+                        .frame(maxWidth: .infinity)
                         .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 14)).padding(.bottom, 30)
                 }
             }
