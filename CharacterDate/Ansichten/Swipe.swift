@@ -24,6 +24,10 @@ struct TankProfil: Decodable, Identifiable, Equatable {
              aktivVorMin, verifiziert, fotos, stimme
     }
 
+    init(id: String, name: String, alter: Int?, foto: String?) {
+        self.id = id; self.name = name; self.alter = alter; self.fotos = foto.map { [$0] } ?? []
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -71,7 +75,16 @@ private struct TankStapel: Decodable {
     var manuell: TankStatus.Manuell?
 }
 
+struct TankLM: Decodable {
+    struct Like: Decodable, Identifiable { let id: String; let foto: String?; let zeit: Double }
+    struct Match: Decodable, Identifiable { let id: String; let charId: String?; let name: String; let alter: Int?; let foto: String?; let zeit: Double?; let neu: Bool }
+    let likes: [Like]
+    let matches: [Match]
+    let ausstehend: Int
+}
+
 private struct SwipeAntwort: Decodable {
+    var wartet: Bool?
     var match: Bool = false
     var charId: String?
     var `super`: Bool?
@@ -98,10 +111,22 @@ struct SwipeAnsicht: View {
     @State private var tankOffen = false
     @State private var letzteRichtung: SwipeRichtung?
     @State private var boost = false
+    @State private var reiter = 0
+    @State private var lm: TankLM?
+    @State private var abo: UUID?
 
     var body: some View {
         VStack(spacing: 14) {
             kopf
+            reiterLeiste
+            if reiter != 0 {
+                LikesMatchesAnsicht(art: reiter, lm: lm, vorziehen: { id in
+                    Task {
+                        _ = try? await v.roh("/api/tank/\(id)/vorziehen", methode: "POST")
+                        stapel = []; await laden(still: true); withAnimation { reiter = 0 }
+                    }
+                }, chat: { cid in if let c = v.charaktere.first(where: { $0.id == cid }) { chatOeffnen(c) } })
+            } else {
             ZStack {
                 if stapel.isEmpty {
                     leer
@@ -114,6 +139,7 @@ struct SwipeAnsicht: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 12)
             knoepfe.padding(.bottom, 10)
+            }
         }
         .background(Hintergrund())
         .toolbar(.hidden, for: .navigationBar)
@@ -143,6 +169,27 @@ struct SwipeAnsicht: View {
         }
         .task { await laden() }
         .task {
+            await lmLaden()
+            abo = v.abonnieren { e in
+                Task { @MainActor in
+                    if e.typ == "tank_like" {
+                        await lmLaden()
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        fehler = "Jemand hat dich geliked 💛"
+                    }
+                    if e.typ == "neues_match", match == nil, let cid = e.charId {
+                        await lmLaden(); await v.neuLaden()
+                        if let m = lm?.matches.first(where: { $0.charId == cid }) {
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                match = (TankProfil(id: m.id, name: m.name, alter: m.alter, foto: m.foto), v.charaktere.first { $0.id == cid })
+                            }
+                        }
+                    }
+                }
+            }
+            while !Task.isCancelled { try? await Task.sleep(for: .seconds(20)); await lmLaden() }
+        }
+        .task {
             // Tank füllt sich im Hintergrund: ab und zu nachschauen
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(stapel.isEmpty ? 8 : 30))
@@ -155,6 +202,36 @@ struct SwipeAnsicht: View {
         TankStatus(imTank: info.imTank, ziel: info.ziel, erzeugtGerade: info.erzeugtGerade, schritt: info.schritt,
                    voll: info.voll, manuell: info.manuell, superLikesUebrig: info.superLikesUebrig)
     }
+
+    private var reiterLeiste: some View {
+        HStack(spacing: 4) {
+            reiterKnopf(0, "Entdecken", nil, false)
+            reiterKnopf(1, "Likes", lm.map { $0.likes.count }, true)
+            reiterKnopf(2, "Matches", lm.map { $0.matches.filter(\.neu).count }, false)
+        }
+        .padding(4).background(.white.opacity(0.06), in: Capsule())
+        .padding(.horizontal, 16)
+    }
+
+    private func reiterKnopf(_ i: Int, _ t: String, _ zahl: Int?, _ gold: Bool) -> some View {
+        Button { withAnimation(.spring(duration: 0.3)) { reiter = i } } label: {
+            HStack(spacing: 5) {
+                Text(t).font(.subheadline.weight(.semibold))
+                if let zahl, zahl > 0 {
+                    Text("\(zahl)").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(gold ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.91, green: 0.69, blue: 0.29), Color(red: 0.96, green: 0.82, blue: 0.48)], startPoint: .leading, endPoint: .trailing))
+                                         : AnyShapeStyle(Color(red: 0.99, green: 0.15, blue: 0.48)), in: Capsule())
+                        .foregroundStyle(gold ? Color(red: 0.23, green: 0.14, blue: 0) : .white)
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 7)
+            .background(reiter == i ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.99, green: 0.15, blue: 0.48), Color(red: 1, green: 0.38, blue: 0.21)], startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(Color.clear), in: Capsule())
+            .foregroundStyle(reiter == i ? .white : Farbe.text2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @MainActor private func lmLaden() async { if let l: TankLM = try? await v.anfrage("/api/tank/likes") { lm = l } }
 
     // MARK: Teile
 
@@ -297,6 +374,10 @@ struct SwipeAnsicht: View {
             let a: SwipeAntwort = try await v.anfrage("/api/tank/\(p.id)/swipe", methode: "POST", body: K(richtung: r.rawValue), zeit: 90)
             if r == .super { info.superLikesUebrig = max(0, info.superLikesUebrig - 1) }
             info.imTank = max(0, info.imTank - 1)
+            if a.wartet == true {
+                fehler = "Like an \(p.name) geschickt 💛 – jetzt ist sie dran."
+                await lmLaden()
+            }
             if a.match {
                 await v.neuLaden()
                 let c = v.charaktere.first { $0.id == a.charId }
@@ -643,6 +724,76 @@ struct TankEinstellungen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen() } } }
             .task { await e.laden(v) }
+        }
+    }
+}
+
+
+/// Likes (verschwommen – wer dich mag, siehst du erst im Stapel) und Matches (offen, Antippen → Chat).
+struct LikesMatchesAnsicht: View {
+    let art: Int
+    let lm: TankLM?
+    let vorziehen: (String) -> Void
+    let chat: (String) -> Void
+    private let spalten = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+
+    var body: some View {
+        ScrollView {
+            if let lm {
+                VStack(alignment: .leading, spacing: 10) {
+                    if art == 1 {
+                        Text(lm.likes.isEmpty ? "Noch keine Likes" : "\(lm.likes.count) \(lm.likes.count == 1 ? "Person mag" : "Leute mögen") dich")
+                            .font(.title3.bold())
+                        Text("Wer dich geliked hat, bleibt verschwommen – bis ihr euch im Stapel begegnet. Wischst du sie nach rechts, ist es sofort ein Match."
+                             + (lm.ausstehend > 0 ? " Du wartest noch auf \(lm.ausstehend) Antwort\(lm.ausstehend == 1 ? "" : "en")." : ""))
+                            .font(.footnote).foregroundStyle(Farbe.text2)
+                        LazyVGrid(columns: spalten, spacing: 10) {
+                            ForEach(lm.likes) { l in
+                                Button { vorziehen(l.id) } label: {
+                                    Color.clear.aspectRatio(3 / 4, contentMode: .fit)
+                                        .overlay { if let f = l.foto { NetzBild(pfad: f).blur(radius: 22).scaleEffect(1.15) } }
+                                        .overlay(alignment: .topTrailing) {
+                                            Image(systemName: "heart.fill").font(.caption.bold()).padding(8)
+                                                .background(LinearGradient(colors: [Color(red: 0.91, green: 0.69, blue: 0.29), Color(red: 0.96, green: 0.82, blue: 0.48)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                                                .foregroundStyle(Color(red: 0.23, green: 0.14, blue: 0)).padding(8)
+                                        }
+                                        .overlay(alignment: .bottom) { Text("Im Stapel ansehen").font(.caption.bold()).padding(.bottom, 10) }
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } else {
+                        Text(lm.matches.isEmpty ? "Noch keine Matches" : "Deine Matches").font(.title3.bold())
+                        Text(lm.matches.isEmpty ? "Like Profile im Stapel – wenn sie dich auch mag, landet ihr hier." : "Antippen, um zu schreiben.")
+                            .font(.footnote).foregroundStyle(Farbe.text2)
+                        LazyVGrid(columns: spalten, spacing: 10) {
+                            ForEach(lm.matches) { m in
+                                Button { if let c = m.charId { chat(c) } } label: {
+                                    Color.clear.aspectRatio(3 / 4, contentMode: .fit)
+                                        .overlay { if let f = m.foto { NetzBild(pfad: f) } }
+                                        .overlay(alignment: .bottomLeading) {
+                                            Text(m.name + (m.alter.map { ", \($0)" } ?? "")).font(.subheadline.bold())
+                                                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                                .background(LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom))
+                                        }
+                                        .overlay(alignment: .topLeading) {
+                                            if m.neu {
+                                                Text("NEU").font(.caption2.weight(.heavy)).padding(.horizontal, 8).padding(.vertical, 3)
+                                                    .background(Color(red: 0.99, green: 0.15, blue: 0.48), in: Capsule()).padding(8)
+                                            }
+                                        }
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            } else {
+                ProgressView().tint(.white).padding(60)
+            }
         }
     }
 }
