@@ -28,6 +28,8 @@ struct HauptAnsicht: View {
                     .tabItem { Label("Chats", systemImage: "bubble.left") }.tag(1)
                 NavigationStack { SwipeAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 }) }
                     .tabItem { Label("Swipe", systemImage: "flame") }.tag(5)
+                LumigramAnsicht(chatOeffnen: { c in chatMit = c; tab = 1 })
+                    .tabItem { Label("Lumigram", systemImage: "camera.aperture") }.tag(6)
                 NavigationStack { ErstellenAnsicht(fertig: { c in chatMit = c; tab = 1 }) }
                     .tabItem { Label("Char erstellen", systemImage: "plus.circle") }.tag(2)
                 NavigationStack { GalerieAnsicht() }
