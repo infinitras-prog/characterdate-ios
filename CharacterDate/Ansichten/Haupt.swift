@@ -205,7 +205,11 @@ struct HomeAnsicht: View {
                     }
                     .padding(26).frame(maxWidth: .infinity).glas()
                 } else {
-                    Text("Entdecken").font(.title2.weight(.semibold))
+                    HStack {
+                        Text("Entdecken").font(.title2.weight(.semibold))
+                        Spacer()
+                        StatusChip()
+                    }
                     TabView(selection: $index) {
                         ForEach(Array(fertig.enumerated()), id: \.element.id) { i, c in
                             HeldKarte(c: c, oeffnen: { oeffnen(c) }).tag(i).padding(.horizontal, 2)
@@ -320,5 +324,48 @@ struct MiniKarte: View {
         .frame(width: 130, height: 175)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Farbe.linie, lineWidth: 1))
+    }
+}
+
+
+/// Dein Status wie im Messenger – deine Charaktere sehen ihn und melden sich entsprechend (oder eben nicht).
+struct StatusChip: View {
+    @Environment(Verbindung.self) private var v
+    struct S: Decodable { let status: String; let wirksam: String; let auto: Bool; let name: String; let farbe: String }
+    @State private var s: S?
+    private let wahl: [(id: String, name: String, farbe: Color, info: String)] = [
+        ("verfuegbar", "Verfügbar", Color(red: 0.23, green: 0.82, blue: 0.49), "Sie melden sich, wie es zu euch passt"),
+        ("abwesend", "Abwesend", Color(red: 0.96, green: 0.72, blue: 0.38), "Seltener, ohne Antwortdruck"),
+        ("beschaeftigt", "Beschäftigt", Color(red: 1, green: 0.35, blue: 0.42), "Nur Enge melden sich, kurz"),
+        ("unsichtbar", "Unsichtbar", Color(white: 0.55), "Du wirkst offline"),
+    ]
+
+    var body: some View {
+        Menu {
+            ForEach(wahl, id: \.id) { w in
+                Button { Task { await setzen(w.id) } } label: {
+                    Label { Text(w.name); Text(w.info) } icon: { Image(systemName: s?.status == w.id ? "checkmark.circle.fill" : "circle.fill") }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle().fill(farbe).frame(width: 9, height: 9).shadow(color: farbe, radius: 4)
+                Text((s?.name ?? "Status") + ((s?.auto ?? false) ? " (auto)" : "")).font(.caption.weight(.semibold))
+                Image(systemName: "chevron.down").font(.caption2)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6).glas(14)
+            .foregroundStyle(.white)
+        }
+        .task { await laden() }
+    }
+
+    private var farbe: Color { wahl.first { $0.id == s?.wirksam }?.farbe ?? .gray }
+
+    @MainActor private func laden() async { s = try? await v.anfrage("/api/status/ich") }
+    @MainActor private func setzen(_ id: String) async {
+        struct B: Encodable { let status: String }
+        if let n: S = try? await v.anfrage("/api/status/ich", methode: "PUT", body: B(status: id)) {
+            UISelectionFeedbackGenerator().selectionChanged(); s = n
+        }
     }
 }
