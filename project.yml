@@ -11,7 +11,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: 0.9.3
+    MARKETING_VERSION: 0.9.4
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
@@ -46,6 +46,7 @@ targets:
             CFBundleURLSchemes: [characterdate]
         NSCameraUsageDescription: Zum Scannen des Kopplungs-Codes am PC, für Fotos im Chat und – nur wenn du es im Anruf einschaltest – als ihre Augen, damit sie sieht, was du ihr zeigst.
         NSMicrophoneUsageDescription: Für Sprachnachrichten und Anrufe mit deinen Charakteren.
+        NSLocationWhenInUseUsageDescription: Für Swipe – damit Profile in deinem Umkreis angezeigt werden. Dein Standort geht nur an deinen eigenen PC.
         NSPhotoLibraryUsageDescription: Damit du Fotos aus deiner Mediathek im Chat schicken kannst.
         NSPhotoLibraryAddUsageDescription: Damit du Bilder aus der Galerie in deine Fotos sichern kannst.
         NSLocalNetworkUsageDescription: CharacterDate verbindet sich mit deinem PC im Heimnetz, auf dem die KI läuft.

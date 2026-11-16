@@ -18,10 +18,11 @@ struct TankProfil: Decodable, Identifiable, Equatable {
     var verifiziert: Bool = false
     var fotos: [String] = []
     var stimme: String?
+    var vorlesen: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, alter, beruf, wohnort, bio, leidenschaften, sucht, sternzeichen, groesseCm, entfernungKm,
-             aktivVorMin, verifiziert, fotos, stimme
+             aktivVorMin, verifiziert, fotos, stimme, vorlesen
     }
 
     init(id: String, name: String, alter: Int?, foto: String?) {
@@ -45,6 +46,7 @@ struct TankProfil: Decodable, Identifiable, Equatable {
         verifiziert = ((try? c.decodeIfPresent(Bool.self, forKey: .verifiziert)) ?? nil) ?? false
         fotos = ((try? c.decodeIfPresent([String].self, forKey: .fotos)) ?? nil) ?? []
         stimme = try? c.decodeIfPresent(String.self, forKey: .stimme)
+        vorlesen = try? c.decodeIfPresent(String.self, forKey: .vorlesen)
     }
 
     /// Zahlen kommen vom Sprachmodell mal als Zahl, mal als Text („25“, „168 cm“).
@@ -78,6 +80,8 @@ private struct TankStapel: Decodable {
 struct TankLM: Decodable {
     struct Like: Decodable, Identifiable { let id: String; let foto: String?; let zeit: Double }
     struct Match: Decodable, Identifiable { let id: String; let charId: String?; let name: String; let alter: Int?; let foto: String?; let zeit: Double?; let neu: Bool }
+    struct Gesendet: Decodable, Identifiable { let id: String; let name: String; let alter: Int?; let foto: String?; let zeit: Double; let `super`: Bool }
+    var gesendet: [Gesendet]? = nil
     let likes: [Like]
     let matches: [Match]
     let ausstehend: Int
@@ -108,6 +112,7 @@ struct SwipeAnsicht: View {
     @State private var match: (profil: TankProfil, char: Charakter?)?
     @State private var fehler: String?
     @State private var einstellungen = false
+    @State private var meinProfil = false
     @State private var tankOffen = false
     @State private var letzteRichtung: SwipeRichtung?
     @State private var boost = false
@@ -125,7 +130,8 @@ struct SwipeAnsicht: View {
                         _ = try? await v.roh("/api/tank/\(id)/vorziehen", methode: "POST")
                         stapel = []; await laden(still: true); withAnimation { reiter = 0 }
                     }
-                }, chat: { cid in if let c = v.charaktere.first(where: { $0.id == cid }) { chatOeffnen(c) } })
+                }, chat: { cid in if let c = v.charaktere.first(where: { $0.id == cid }) { chatOeffnen(c) } },
+                   neu: { Task { await lmLaden(); await v.neuLaden() } })
             } else {
             ZStack {
                 if stapel.isEmpty {
@@ -158,6 +164,7 @@ struct SwipeAnsicht: View {
             }
         }
         .sheet(isPresented: $einstellungen) { TankEinstellungen().presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $meinProfil) { SwipeProfilBlatt() }
         .sheet(isPresented: $tankOffen) {
             NavigationStack {
                 ScrollView { TankKarte().padding() }
@@ -252,6 +259,10 @@ struct SwipeAnsicht: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Tank: \(info.imTank) von \(info.ziel) – antippen zum Füllen")
+            Button { meinProfil = true } label: {
+                Image(systemName: "person.crop.circle").font(.body.bold()).frame(width: 36, height: 36).glas(18)
+            }
+            .accessibilityLabel("Mein Swipe-Profil")
             Button { einstellungen = true } label: {
                 Image(systemName: "slider.horizontal.3").font(.body.bold()).frame(width: 36, height: 36).glas(18)
             }
@@ -432,7 +443,14 @@ private struct ProfilKarte: View {
             ZStack(alignment: .bottom) {
                 // Fotos (links/rechts tippen wie bei Tinder)
                 ZStack {
-                    if p.fotos.isEmpty { Rectangle().fill(Farbe.verlauf) }
+                    if p.fotos.isEmpty {
+                        Rectangle().fill(Farbe.verlauf)
+                        VStack(spacing: 6) {
+                            Image(systemName: "eye.slash").font(.title)
+                            Text(String(p.name.prefix(1))).font(.system(size: 90, weight: .heavy))
+                            Text("Zeigt (noch) kein Foto").font(.caption)
+                        }.foregroundStyle(.white.opacity(0.75)).padding(.bottom, 120)
+                    }
                     ForEach(Array(p.fotos.enumerated()), id: \.offset) { i, f in
                         NetzBild(pfad: f).opacity(i == foto ? 1 : 0)
                     }
@@ -492,12 +510,12 @@ private struct ProfilKarte: View {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Color(red: 0.25, green: 0.7, blue: 1)).font(.title3)
                 }
                 Spacer()
-                if let s = p.stimme {
+                if let s = p.vorlesen ?? p.stimme {
                     Button { Task { await spieler.umschalten(s, v: v) } } label: {
-                        Image(systemName: spieler.aktuell == s ? "pause.fill" : "waveform")
+                        Image(systemName: spieler.aktuell == s ? "pause.fill" : (p.vorlesen != nil ? "text.bubble" : "waveform"))
                             .font(.body.bold()).frame(width: 38, height: 38).background(.white.opacity(0.22), in: Circle())
                     }
-                    .accessibilityLabel("Stimme anhören")
+                    .accessibilityLabel(p.vorlesen != nil ? "Profil vorlesen" : "Stimme anhören")
                 }
                 Button { withAnimation(.spring(response: 0.35)) { offen.toggle() } } label: {
                     Image(systemName: offen ? "chevron.down" : "info").font(.body.bold())
@@ -709,6 +727,13 @@ struct TankEinstellungen: View {
                     Section("Ich suche") {
                         LabeledContent("Geschlecht", value: "Frauen")
                         LabeledContent("Männer / beide") { Text("folgt").foregroundStyle(Farbe.text3) }
+                        StandortZeile()
+                        let radius = e.wert("tank.radius_km", 60)
+                        VStack(alignment: .leading) {
+                            Text("Maximale Entfernung: \(radius >= 160 ? "160+" : "\(radius)") km")
+                            Slider(value: Binding(get: { Double(radius) }, set: { e.setzen("tank.radius_km", Int($0), v) }), in: 2...160, step: 1)
+                                .tint(Farbe.rose)
+                        }
                         let von = e.wert("tank.alter_von", 18), bis = e.wert("tank.alter_bis", 25)
                         Stepper("Alter ab \(von)", value: Binding(get: { von }, set: { e.setzen("tank.alter_von", min($0, bis), v) }), in: 18...60)
                         Stepper("Alter bis \(bis >= 60 ? "60+" : "\(bis)")", value: Binding(
@@ -720,7 +745,7 @@ struct TankEinstellungen: View {
             }
             .scrollContentBackground(.hidden)
             .background(Hintergrund())
-            .navigationTitle("Swipe-Einstellungen")
+            .navigationTitle("Suchpräferenzen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen() } } }
             .task { await e.laden(v) }
@@ -735,6 +760,9 @@ struct LikesMatchesAnsicht: View {
     let lm: TankLM?
     let vorziehen: (String) -> Void
     let chat: (String) -> Void
+    var neu: () -> Void = {}
+    @Environment(Verbindung.self) private var v
+    @State private var entmatchen: TankLM.Match?
     private let spalten = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
     var body: some View {
@@ -763,6 +791,33 @@ struct LikesMatchesAnsicht: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                        let ges = lm.gesendet ?? []
+                        Text("Deine Likes").font(.title3.bold()).padding(.top, 14)
+                        Text(ges.isEmpty ? "Noch keine offenen Likes." : "\(ges.count) warten auf Antwort – manche antworten in Minuten, andere in Stunden, manche nie. Lehnt sie ab, verschwindet ihr Profil. Lange drücken zum Zurückziehen.")
+                            .font(.footnote).foregroundStyle(Farbe.text2)
+                        LazyVGrid(columns: spalten, spacing: 10) {
+                            ForEach(ges) { g in
+                                Color.clear.aspectRatio(3 / 4, contentMode: .fit)
+                                    .overlay { if let f = g.foto { NetzBild(pfad: f) } else { Rectangle().fill(Farbe.verlauf) } }
+                                    .overlay(alignment: .bottomLeading) {
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(g.name + (g.alter.map { ", \($0)" } ?? "")).font(.subheadline.bold())
+                                            Text("wartet …").font(.caption2).opacity(0.8)
+                                        }
+                                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom))
+                                    }
+                                    .overlay(alignment: .topLeading) {
+                                        if g.`super` { Image(systemName: "star.fill").font(.caption).padding(6).background(Color.blue, in: Circle()).padding(8) }
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            Task { _ = try? await v.roh("/api/tank/\(g.id)/like", methode: "DELETE"); neu() }
+                                        } label: { Label("Like zurückziehen", systemImage: "arrow.uturn.backward") }
+                                    }
+                            }
+                        }
                     } else {
                         Text(lm.matches.isEmpty ? "Noch keine Matches" : "Deine Matches").font(.title3.bold())
                         Text(lm.matches.isEmpty ? "Like Profile im Stapel – wenn sie dich auch mag, landet ihr hier." : "Antippen, um zu schreiben.")
@@ -786,6 +841,9 @@ struct LikesMatchesAnsicht: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) { entmatchen = m } label: { Label("Entmatchen", systemImage: "heart.slash") }
+                                }
                             }
                         }
                     }
@@ -795,5 +853,11 @@ struct LikesMatchesAnsicht: View {
                 ProgressView().tint(.white).padding(60)
             }
         }
+        .confirmationDialog("\(entmatchen?.name ?? "") entmatchen?", isPresented: Binding(get: { entmatchen != nil }, set: { if !$0 { entmatchen = nil } }), titleVisibility: .visible) {
+            Button("Entmatchen", role: .destructive) {
+                if let c = entmatchen?.charId { Task { _ = try? await v.roh("/api/charaktere/\(c)", methode: "DELETE"); neu() } }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { Text("Der Chat ist weg, ihre Fotos und ihre Stimme werden von der Festplatte gelöscht.") }
     }
 }

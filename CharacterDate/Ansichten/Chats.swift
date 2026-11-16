@@ -25,6 +25,7 @@ struct ChatListe: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(c.name).font(.headline)
+                                if c.dna.swipe == true { Text("🔥").font(.caption) }
                                 Spacer()
                                 if let l = c.letzte { Text(uhrzeit(l.zustellen)).font(.caption).foregroundStyle(Farbe.text3) }
                             }
@@ -38,6 +39,7 @@ struct ChatListe: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .charMenue(c, oeffnen: { auswahl = c })
                 .listRowBackground(Color.clear)
             }
         }

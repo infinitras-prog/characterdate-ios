@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Tank-Stand
 
 struct TankStatus: Decodable, Equatable {
-    struct Manuell: Decodable, Equatable { var an: Bool = false; var pausiert: Bool = false; var fertig: Int = 0 }
+    struct Manuell: Decodable, Equatable { var an: Bool = false; var pausiert: Bool = false; var fertig: Int = 0; var ziel: Int? = nil }
     var imTank: Int = 0
     var ziel: Int = 50
     var erzeugtGerade: Bool = false
@@ -41,9 +41,9 @@ final class TankModell {
         if let s: TankStatus = try? await v.anfrage("/api/tank/status") { stand = s }
     }
 
-    func fuellen(_ aktion: String, _ v: Verbindung) async {
-        struct A: Encodable { let aktion: String }
-        if let s: TankStatus = try? await v.anfrage("/api/tank/fuellen", methode: "POST", body: A(aktion: aktion)) {
+    func fuellen(_ aktion: String, _ v: Verbindung, menge: Int? = nil) async {
+        struct A: Encodable { let aktion: String; let menge: Int? }
+        if let s: TankStatus = try? await v.anfrage("/api/tank/fuellen", methode: "POST", body: A(aktion: aktion, menge: menge)) {
             withAnimation(.spring) { stand = s }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
@@ -197,17 +197,23 @@ struct Lampe: View {
 struct TankKarte: View {
     @Environment(Verbindung.self) private var v
     @State private var modell = TankModell()
+    @State private var menge = 10
 
     var body: some View {
         VStack(spacing: 14) {
             TankHerz(stand: modell.stand)
+            if modell.stand?.manuell?.an != true {
+                Picker("Wie viele?", selection: $menge) {
+                    ForEach([3, 5, 10, 20, 30], id: \.self) { Text("\($0)").tag($0) }
+                }.pickerStyle(.segmented)
+            }
             HStack(spacing: 10) {
                 if let s = modell.stand {
                     let m = s.manuell
                     if m?.an != true {
-                        Button { Task { await modell.fuellen("start", v) } } label: {
-                            Label(s.istVoll ? "Tank ist voll" : "Jetzt füllen", systemImage: "bolt.fill")
-                        }.buttonStyle(HauptKnopf()).disabled(s.istVoll)
+                        Button { Task { await modell.fuellen("start", v, menge: menge) } } label: {
+                            Label("\(menge) Profile erzeugen", systemImage: "bolt.fill")
+                        }.buttonStyle(HauptKnopf())
                     } else {
                         if m?.pausiert == true {
                             Button { Task { await modell.fuellen("weiter", v) } } label: { Label("Weiter", systemImage: "play.fill") }
@@ -223,7 +229,7 @@ struct TankKarte: View {
                 }
             }
             if let m = modell.stand?.manuell, m.an {
-                Text("\(m.fertig) neue Profile in diesem Lauf · fertige bleiben, auch wenn du abbrichst")
+                Text("\(m.fertig) von \(m.ziel ?? menge) neuen Profilen · fertige bleiben, auch wenn du abbrichst")
                     .font(.caption2).foregroundStyle(Farbe.text3).multilineTextAlignment(.center)
             } else {
                 Text("Von selbst füllt er sich nur, wenn dein PC frei ist. »Jetzt füllen« läuft auch, während du aktiv bist.")

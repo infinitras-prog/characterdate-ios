@@ -71,6 +71,7 @@ struct DNA: Codable, Hashable {
     var leben: Leben?
     var stimme: StimmeInfo?
     var referenzbilder: [String]?
+    var swipe: Bool?
 }
 
 struct Charakter: Codable, Identifiable, Hashable {
@@ -112,6 +113,9 @@ struct Bild: Codable, Identifiable, Hashable {
     let art: String
     let beschreibung: String
     let erstellt: Double
+    var meta: [String: JSONWert]?
+
+    var poster: String? { meta?["poster"]?.text.map { $0.hasPrefix("/api/") ? $0 : "/api/medien/\($0)" } }
 }
 
 struct KopplungsCode: Codable { let app: String; let code: String; let adressen: [String]; let name: String? }

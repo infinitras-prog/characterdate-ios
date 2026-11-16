@@ -195,7 +195,8 @@ struct HomeAnsicht: View {
     let oeffnen: (Charakter) -> Void
     @State private var index = 0
 
-    var fertig: [Charakter] { v.charaktere.filter { ($0.entwurf ?? 0) == 0 } }
+    var fertig: [Charakter] { v.charaktere.filter { ($0.entwurf ?? 0) == 0 && $0.dna.swipe != true } }
+    var matches: [Charakter] { v.charaktere.filter { ($0.entwurf ?? 0) == 0 && $0.dna.swipe == true } }
 
     var body: some View {
         ScrollView {
@@ -231,11 +232,26 @@ struct HomeAnsicht: View {
                         HStack(spacing: 12) {
                             ForEach(fertig) { c in
                                 Button { oeffnen(c) } label: { MiniKarte(c: c) }.buttonStyle(.plain)
+                                    .charMenue(c, oeffnen: { oeffnen(c) })
                                     .scrollTransition(.interactive, axis: .horizontal) { inhalt, phase in
                                         inhalt.scaleEffect(phase.isIdentity ? 1 : 0.88)
                                             .opacity(phase.isIdentity ? 1 : 0.6)
                                             .rotation3DEffect(.degrees(phase.value * -14), axis: (x: 0, y: 1, z: 0))
                                     }
+                            }
+                        }
+                    }
+                }
+                if !matches.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Deine Matches 🔥").font(.title3.weight(.semibold))
+                        Text("Von Swipe – ihr lernt euch gerade erst kennen.").font(.caption).foregroundStyle(Farbe.text2)
+                    }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(matches) { c in
+                                Button { oeffnen(c) } label: { MiniKarte(c: c) }.buttonStyle(.plain)
+                                    .charMenue(c, oeffnen: { oeffnen(c) })
                             }
                         }
                     }

@@ -92,8 +92,11 @@ struct GalerieAnsicht: View {
     @State private var bilder: [Bild] = []
     @State private var art = ""
     @State private var gross: GrossesBild?
+    @State private var info: Bild?
+    @State private var video: GrossesBild?
+    @State private var weg: Bild?
     private let spalten = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-    private let arten: [(String, String)] = [("", "Alle"), ("selfie", "Ihre Fotos"), ("wirfoto", "Unsere"), ("studio", "Studio"), ("von_dir", "Von dir")]
+    private let arten: [(String, String)] = [("", "Alle Fotos"), ("selfie", "Ihre Fotos"), ("wirfoto", "Unsere"), ("ort", "Orte"), ("studio", "Studio"), ("von_dir", "Von dir"), ("video", "Videos")]
 
     var body: some View {
         ScrollView {
@@ -111,14 +114,19 @@ struct GalerieAnsicht: View {
                     }
                 }
                 if bilder.isEmpty {
-                    Text("Noch keine Bilder. Bitte sie im Chat um ein Foto.").font(.subheadline).foregroundStyle(Farbe.text2)
+                    Text(art == "video" ? "Noch keine Videos." : "Noch keine Bilder. Bitte sie im Chat um ein Foto.").font(.subheadline).foregroundStyle(Farbe.text2)
                         .padding(30).frame(maxWidth: .infinity).glas()
                 }
                 LazyVGrid(columns: spalten, spacing: 8) {
                     ForEach(bilder) { b in
-                        NetzBild(pfad: b.url).frame(height: 220).clipped()
+                        NetzBild(pfad: b.art == "video" ? (b.poster ?? b.url) : b.url).frame(height: 220).clipped()
+                            .overlay { if b.art == "video" { Image(systemName: "play.circle.fill").font(.system(size: 44)).foregroundStyle(.white.opacity(0.9)).shadow(radius: 6) } }
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .onTapGesture { gross = GrossesBild(pfad: b.url, bildId: b.id) }
+                            .onTapGesture { if b.art == "video" { video = GrossesBild(pfad: b.url, bildId: b.id) } else { gross = GrossesBild(pfad: b.url, bildId: b.id) } }
+                            .contextMenu {
+                                Button { info = b } label: { Label("Infos: Modell, LoRAs, Prompt", systemImage: "info.circle") }
+                                Button(role: .destructive) { weg = b } label: { Label("Löschen", systemImage: "trash") }
+                            }
                     }
                 }
             }
@@ -128,12 +136,20 @@ struct GalerieAnsicht: View {
         .task(id: art) { await laden() }
         .refreshable { await laden() }
         .fullScreenCover(item: $gross) { b in BildVollbild(bild: b, geaendert: { Task { await laden() } }) }
+        .fullScreenCover(item: $video) { b in VideoBlatt(pfad: b.pfad) }
+        .sheet(item: $info) { b in BildInfoBlatt(b: b).presentationDetents([.medium, .large]) }
+        .confirmationDialog("Löschen?", isPresented: Binding(get: { weg != nil }, set: { if !$0 { weg = nil } }), titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                if let b = weg { Task { _ = try? await v.roh("/api/bilder/\(b.id)", methode: "DELETE"); await laden() } }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { Text("Verschwindet aus Galerie, Chat und von der Festplatte.") }
     }
 
     @MainActor
     private func laden() async {
         let pfad = art.isEmpty ? "/api/galerie" : "/api/galerie?art=\(art)"
-        if let b: [Bild] = try? await v.anfrage(pfad) { bilder = b }
+        if let b: [Bild] = try? await v.anfrage(pfad) { bilder = art.isEmpty ? b.filter { $0.art != "video" } : b }
     }
 }
 
