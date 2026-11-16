@@ -40,10 +40,11 @@ struct HauptAnsicht: View {
         }
         .onAppear {
             abo = v.abonnieren { e in
-                if e.typ == "eingehender_anruf", let cid = e.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
+                if e.typ == "eingehender_anruf", angenommen == nil, !Telefon.laeuft, let cid = e.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
                     ruft = Klingeln(c: c, video: e.roh["video"] as? Bool ?? false)
                 }
-                if e.typ == "anruf_ende", ruft?.c.id == e.charId { ruft = nil }
+                // Klingeln vorbei (sie hat aufgelegt / verpasst) – aber nie ein schon angenommenes Gespräch schließen
+                if e.typ == "anruf_ende", ruft?.c.id == e.charId, angenommen == nil { ruft = nil }
                 if e.typ == "nachricht" {
                     widgetUhr?.cancel()
                     widgetUhr = Task { try? await Task.sleep(for: .seconds(4)); await v.neuLaden(); await WidgetSchreiber.aktualisieren(v) }
@@ -71,16 +72,21 @@ struct HauptAnsicht: View {
         }
         .onChange(of: Push.shared.ziel) { _, _ in zielAbarbeiten() }
         .onDisappear { if let abo { v.abbestellen(abo) } }
-        .fullScreenCover(item: $ruft) { k in
-            KlingelAnsicht(k: k) { video in
-                ruft = nil
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { angenommen = Klingeln(c: k.c, video: video) }
-            } ablehnen: {
-                ruft = nil
-                Task { struct Ok: Decodable { let ok: Bool }; let _: Ok? = try? await v.anfrage("/api/charaktere/\(k.c.id)/anruf/ablehnen", methode: "POST") }
+        // Klingeln und Gespräch in EINEM Vollbild: Beim Abheben wechselt der Inhalt direkt zum Anruf. Früher schloss sich
+        // das Klingel-Fenster und 0,4 s später öffnete das Anruf-Fenster – in der Lücke meldete der PC noch »klingelt«,
+        // das Klingeln kam zurück und beide Fenster schoben sich gegenseitig weg → Anruf endete beim Abheben.
+        .fullScreenCover(item: $ruft, onDismiss: { angenommen = nil }) { k in
+            if let a = angenommen, a.c.id == k.c.id {
+                AnrufAnsicht(c: a.c, video: a.video, eingehend: true)
+            } else {
+                KlingelAnsicht(k: k) { video in
+                    angenommen = Klingeln(c: k.c, video: video)
+                } ablehnen: {
+                    ruft = nil
+                    Task { struct Ok: Decodable { let ok: Bool }; let _: Ok? = try? await v.anfrage("/api/charaktere/\(k.c.id)/anruf/ablehnen", methode: "POST") }
+                }
             }
         }
-        .fullScreenCover(item: $angenommen) { k in AnrufAnsicht(c: k.c, video: k.video, eingehend: true) }
     }
 }
 
