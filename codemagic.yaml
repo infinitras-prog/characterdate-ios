@@ -29,11 +29,15 @@ workflows:
           export GITHUB_ENV="$RUNNER_TEMP/env.txt"; : > "$GITHUB_ENV"
           export GITHUB_RUN_ID="cm-$BUILD_NUMBER"
           export GITHUB_RUN_NUMBER=$((1000 + BUILD_NUMBER))   # TestFlight-Laufnummer immer höher als die alten GitHub-Builds
+          # Eingetragene Werte säubern (Leerzeichen, Anführungszeichen, Beschriftungen mitkopiert)
+          export ASC_ISSUER_ID="$(printf '%s' "$ASC_ISSUER_ID" | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1 | tr 'A-F' 'a-f')"
+          export ASC_KEY_ID="$(printf '%s' "$ASC_KEY_ID" | grep -oE '[A-Z0-9]{10}' | head -1)"
+          export APPLE_TEAM_ID="$(printf '%s' "$APPLE_TEAM_ID" | grep -oE '[A-Z0-9]{10}' | head -1)"
           export DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
           export ASC_KEY_PATH="$RUNNER_TEMP/keys/AuthKey.p8"
           # Prüfhilfe ohne Geheimnis: Kennung, Länge und Fingerabdruck des ÖFFENTLICHEN Schlüssels
-          echo "Schlüssel-Kennung: $ASC_KEY_ID · Team: $APPLE_TEAM_ID · Issuer-Länge: ${#ASC_ISSUER_ID}"
+          echo "Schlüssel-Kennung: $ASC_KEY_ID · Team: $APPLE_TEAM_ID · Issuer-Länge: ${#ASC_ISSUER_ID} · Kennung-Länge: ${#ASC_KEY_ID} · Team-Länge: ${#APPLE_TEAM_ID}"
           echo "Erste Zeile: $(head -1 "$ASC_KEY_PATH") · Zeilen: $(wc -l < "$ASC_KEY_PATH")"
           echo "Fingerabdruck: $(openssl pkey -in "$ASC_KEY_PATH" -pubout -outform DER 2>/dev/null | shasum -a 256 | cut -c1-16)"
           python3 -m pip install --quiet --break-system-packages "pyjwt[crypto]" || python3 -m pip install --quiet "pyjwt[crypto]"
