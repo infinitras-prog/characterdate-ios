@@ -271,6 +271,7 @@ struct AlleEinstellungen: View {
             Toggle("Sie schreibt von sich aus", isOn: bindung("initiative", true))
             Toggle("Anrufe von ihr", isOn: bindung("anrufe_von_ihr", true))
             Toggle("Storys", isOn: bindung("storys", true))
+            Toggle("Ihr Leben entwickelt sich (Kapitel, Ziele, Termine)", isOn: bindung("lebensentwicklung", true))
             Toggle("Websuche (Fakten nachschlagen)", isOn: bindung("websuche", true))
             HStack {
                 Text("Ruhezeit")
@@ -299,6 +300,7 @@ struct AlleEinstellungen: View {
             Picker("Videoqualität", selection: bindung("video.qualitaet", "ausgewogen")) {
                 Text("Schnell").tag("schnell"); Text("Ausgewogen").tag("ausgewogen"); Text("Maximum").tag("maximum")
             }.pickerStyle(.segmented)
+            Toggle("Video-LoRAs automatisch wählen", isOn: bindung("video.lora_agent", true))
         } header: { Text("Videos") } footer: {
             Text(h.wert("video.qualitaet", "ausgewogen") == "maximum" ? "Höhere Auflösung, mehr Schritte – schönste Videos, dauert am längsten."
                  : h.wert("video.qualitaet", "ausgewogen") == "schnell" ? "Kleiner und ohne Zwischenbilder – am schnellsten." : "Standard-Auflösung, flüssig interpoliert.")
@@ -309,6 +311,12 @@ struct AlleEinstellungen: View {
                 get: { h.wert("stimme.engine", "qwen") == "fish" }, set: { h.setzen("stimme.engine", $0 ? "fish" : "qwen", v) }))
             Toggle("Echte Bewegungen im Videoanruf", isOn: bindung("anrufclips", true))
         } header: { Text("Stimme & Anrufe") }
+        Section {
+            Toggle("Lumigram lebt von selbst", isOn: bindung("lumigram.an", true))
+            Picker("Reels pro Tag", selection: bindung("lumigram.reels_pro_tag", 2)) {
+                Text("0").tag(0); Text("1").tag(1); Text("2").tag(2); Text("4").tag(4); Text("8").tag(8)
+            }.pickerStyle(.segmented)
+        } header: { Text("Lumigram") } footer: { Text("Charaktere und Creator posten über den Tag, erzeugt im Leerlauf am PC.") }
         Section {
             Toggle("Mitteilungen", isOn: bindung("push.an", true))
             Toggle("Neue Nachrichten", isOn: bindung("push.nachrichten", true))

@@ -372,6 +372,15 @@ struct ChatAnsicht: View {
             } else {
                 Fehlgeschlagen(m: m, text: "🎬 Das Video ist nicht geworden.")
             }
+        case "lumi_post":
+            VStack(alignment: .leading, spacing: 6) {
+                Text("@\(m.m("konto")?.text ?? "") · Lumigram\(m.m("reel")?.wahr == true ? "-Reel" : "")").font(.caption.bold()).opacity(0.85)
+                if let b = m.m("bild")?.text { NetzBild(pfad: b).frame(width: 200, height: 250).clipped().clipShape(RoundedRectangle(cornerRadius: 12)) }
+                if let t = m.m("posttext")?.text, !t.isEmpty { Text(t).font(.caption).opacity(0.8).lineLimit(3) }
+                if !m.text.isEmpty { Text(m.text).font(.subheadline) }
+            }
+            .frame(width: 220, alignment: .leading)
+            .padding(10).background(blasenGrund(ich), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         case "sprache":
             VStack(alignment: .leading, spacing: 6) {
                 if let a = m.m("audio")?.text { SprachBlase(pfad: a, dauer: m.m("dauer")?.zahl, hell: ich) }

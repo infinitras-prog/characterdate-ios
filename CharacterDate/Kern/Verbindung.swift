@@ -182,6 +182,31 @@ final class Verbindung {
         return try decoder.decode(T.self, from: daten)
     }
 
+    /// Mehrere Dateien in einem Feld hochladen (multipart/form-data), z. B. Fotos eines Lumigram-Beitrags.
+    func hochladenMehrere<T: Decodable>(_ pfad: String, dateien: [Data], feld: String, typ: String, felder: [String: String] = [:]) async throws -> T {
+        guard let b = basis, let url = URL(string: pfad, relativeTo: b) else { throw Fehler.text("Nicht verbunden.") }
+        let grenze = "cd-\(UUID().uuidString)"
+        var body = Data()
+        for (k, v) in felder {
+            body.append("--\(grenze)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n".data(using: .utf8)!)
+        }
+        let endung = typ == "image/png" ? "png" : "jpg"
+        for (i, d) in dateien.enumerated() {
+            body.append("--\(grenze)\r\nContent-Disposition: form-data; name=\"\(feld)\"; filename=\"bild\(i).\(endung)\"\r\nContent-Type: \(typ)\r\n\r\n".data(using: .utf8)!)
+            body.append(d)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+        body.append("--\(grenze)--\r\n".data(using: .utf8)!)
+        var r = URLRequest(url: url, timeoutInterval: 300)
+        r.httpMethod = "POST"
+        r.setValue("multipart/form-data; boundary=\(grenze)", forHTTPHeaderField: "Content-Type")
+        if let k = schluessel { r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization") }
+        let (daten, antwort) = try await sitzung.upload(for: r, from: body)
+        let code = (antwort as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw Fehler.vomServer(daten, code) }
+        return try decoder.decode(T.self, from: daten)
+    }
+
     /// Medien (Bilder, Ton) mit Schlüssel im Header laden.
     func medien(_ rel: String) async throws -> Data {
         let pfad = rel.hasPrefix("/api/") ? rel : "/api/medien/" + rel

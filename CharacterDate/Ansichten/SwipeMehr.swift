@@ -9,6 +9,7 @@ struct CharMenue: ViewModifier {
     let c: Charakter
     var oeffnen: (() -> Void)? = nil
     @State private var frage: String?          // "leeren" | "loeschen"
+    @State private var lebenslauf = false
 
     private var swipe: Bool { c.dna.swipe == true }
 
@@ -16,6 +17,7 @@ struct CharMenue: ViewModifier {
         content
             .contextMenu {
                 if let oeffnen { Button { oeffnen() } label: { Label("Chat öffnen", systemImage: "bubble.left.and.bubble.right") } }
+                Button { lebenslauf = true } label: { Label("Lebenslauf", systemImage: "clock.arrow.circlepath") }
                 Button { frage = "leeren" } label: { Label("Chatverlauf leeren", systemImage: "eraser") }
                 Button(role: .destructive) { frage = "loeschen" } label: {
                     Label(swipe ? "Entmatchen" : "Charakter löschen", systemImage: swipe ? "heart.slash" : "trash")
@@ -32,6 +34,7 @@ struct CharMenue: ViewModifier {
                 }
                 Button("Abbrechen", role: .cancel) {}
             } message: { Text(text) }
+            .sheet(isPresented: $lebenslauf) { LebenslaufBlatt(c: c).presentationDetents([.large]) }
     }
 
     private var titel: String {

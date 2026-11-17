@@ -15,6 +15,9 @@ struct LumiPost: Decodable, Identifiable, Hashable {
     var kommentare: Int
     var geliked: Bool
     let konto: LumiKontoKurz
+    var poster: String? = nil
+    var hashtags: [String]? = nil
+    var ichFolge: Bool? = nil
 }
 
 struct LumiKonto: Decodable, Identifiable {
@@ -32,6 +35,8 @@ struct LumiKonto: Decodable, Identifiable {
     let istIch: Bool
     let posts: [LumiPost]
     let charId: String?
+    var storys: [LumiStory]? = nil
+    var highlights: [LumiStory]? = nil
 }
 
 struct LumiKommentar: Decodable, Identifiable { let id: String; let text: String; let zeit: Double; let antwortAuf: String?; let konto: LumiKontoKurz }
@@ -85,6 +90,8 @@ struct LumigramAnsicht: View {
     @State private var geladen = false
     @State private var tab = 0
     @State private var pfad = NavigationPath()
+    @State private var erstellen = false
+    @State private var neu = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,6 +105,8 @@ struct LumigramAnsicht: View {
                         switch tab {
                         case 0: LumiFeed(pfad: $pfad)
                         case 1: LumiSuche(pfad: $pfad)
+                        case 3: LumiReels(pfad: $pfad)
+                        case 4: LumiMitteilungen(pfad: $pfad)
                         default: if let ich { LumiKontoAnsicht(id: ich.id, pfad: $pfad, chatOeffnen: chatOeffnen) }
                         }
                     }
@@ -113,7 +122,12 @@ struct LumigramAnsicht: View {
                         }
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { tab = 1 } label: { Image(systemName: "heart").font(.title3) }.accessibilityLabel("Aktivität")
+                        Button { pfad = NavigationPath(); tab = 4; neu = 0 } label: {
+                            Image(systemName: tab == 4 ? "heart.fill" : "heart").font(.title3)
+                                .overlay(alignment: .topTrailing) {
+                                    if neu > 0 { Circle().fill(Color(red: 1, green: 0.19, blue: 0.25)).frame(width: 9, height: 9).offset(x: 3, y: -2) }
+                                }
+                        }.accessibilityLabel("Mitteilungen")
                         Button { zuChats() } label: { Image(systemName: "paperplane").font(.title3) }.accessibilityLabel("Nachrichten")
                     }
                 }
@@ -128,10 +142,9 @@ struct LumigramAnsicht: View {
                 HStack {
                     leistenKnopf(0, "house", "house.fill")
                     leistenKnopf(1, "magnifyingglass", "magnifyingglass")
-                    Button { } label: { Image(systemName: "plus.app").font(.title2) }.frame(maxWidth: .infinity).opacity(0.35)
-                        .accessibilityLabel("Beitrag erstellen (kommt bald)")
-                    Button { } label: { Image(systemName: "play.rectangle").font(.title2) }.frame(maxWidth: .infinity).opacity(0.35)
-                        .accessibilityLabel("Reels (kommt bald)")
+                    Button { erstellen = true } label: { Image(systemName: "plus.app").font(.title2) }.frame(maxWidth: .infinity)
+                        .accessibilityLabel("Beitrag erstellen")
+                    leistenKnopf(3, "play.rectangle", "play.rectangle.fill")
                     Button { pfad = NavigationPath(); tab = 2 } label: {
                         LumiAvatar(k: LumiKontoKurz(id: ich!.id, name: ich!.name, anzeige: nil, avatar: ich!.avatar), groesse: 26, ring: false)
                             .overlay(Circle().stroke(.white, lineWidth: tab == 2 ? 1.5 : 0).padding(-2))
@@ -147,6 +160,7 @@ struct LumigramAnsicht: View {
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .tabBar)
         .task { await laden() }
+        .sheet(isPresented: $erstellen) { LumiErstellen { pfad = NavigationPath(); tab = 2 } }
     }
 
     private func leistenKnopf(_ i: Int, _ aus: String, _ an: String) -> some View {
@@ -160,7 +174,9 @@ struct LumigramAnsicht: View {
     }
 
     @MainActor private func laden() async {
-        if let h: KontoHuelle = try? await v.anfrage("/api/lumi/ich") { ich = h.konto }
+        if let h: KontoHuelle = try? await v.anfrage("/api/lumi/ich") { ich = h.konto; LumiStand.ichId = h.konto?.id }
+        struct U: Decodable { let ungelesen: Int }
+        if let u: U = try? await v.anfrage("/api/lumi/mitteilungen") { neu = u.ungelesen }
         geladen = true
     }
 }
@@ -304,6 +320,7 @@ struct LumiPostKarte: View {
     @State var post: LumiPost
     @Binding var pfad: NavigationPath
     @State private var herz = false
+    @State private var teilen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -322,7 +339,7 @@ struct LumiPostKarte: View {
             ZStack {
                 if let m = post.medien.first {
                     Color.clear.aspectRatio(4 / 5, contentMode: .fit).frame(maxWidth: .infinity)
-                        .overlay { NetzBild(pfad: m) }.clipped()
+                        .overlay { LumiMedium(pfad: m, poster: post.poster) }.clipped()
                 } else {
                     Text(post.text).font(.title3).padding(30).frame(maxWidth: .infinity, minHeight: 240)
                         .background(Farbe.verlauf.opacity(0.4))
@@ -344,7 +361,7 @@ struct LumiPostKarte: View {
                         .symbolEffect(.bounce, value: post.geliked)
                 }
                 Button { pfad.append(post) } label: { Image(systemName: "bubble.right").font(.title2) }
-                Image(systemName: "paperplane").font(.title2)
+                Button { teilen = true } label: { Image(systemName: "paperplane").font(.title2) }
                 Spacer()
                 Image(systemName: "bookmark").font(.title2)
             }
@@ -352,6 +369,7 @@ struct LumiPostKarte: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(Lumi.zahl(post.likes)) „Gefällt mir“-Angaben").font(.footnote.bold())
                 if !post.text.isEmpty { (Text(post.konto.name).bold() + Text(" " + post.text)).font(.footnote) }
+                if let h = post.hashtags, !h.isEmpty { Text(h.map { "#" + $0 }.joined(separator: " ")).font(.footnote).foregroundStyle(Color(red: 0.88, green: 0.95, blue: 1)) }
                 if post.kommentare > 0 {
                     Button("Alle \(post.kommentare) Kommentare ansehen") { pfad.append(post) }
                         .font(.footnote).foregroundStyle(IG.grau)
@@ -361,6 +379,7 @@ struct LumiPostKarte: View {
             .padding(.horizontal, 12)
         }
         .padding(.bottom, 10)
+        .sheet(isPresented: $teilen) { LumiTeilen(post: post).presentationDetents([.medium]) }
     }
 
     @MainActor private func liken(_ an: Bool) async {
@@ -368,7 +387,10 @@ struct LumiPostKarte: View {
         post.geliked = an
         post.likes += an == alt.geliked ? 0 : (an ? 1 : -1)
         struct A: Encodable { let an: Bool }
-        if let n: LumiPost = try? await v.anfrage("/api/lumi/posts/\(post.id)/like", methode: "POST", body: A(an: an)) { post = n }
+        if var n: LumiPost = try? await v.anfrage("/api/lumi/posts/\(post.id)/like", methode: "POST", body: A(an: an)) {
+            if n.poster == nil { n.poster = alt.poster }
+            post = n
+        }
     }
 }
 
@@ -395,11 +417,13 @@ private struct LumiSuche: View {
                     Text("Keine Ergebnisse").font(.headline)
                     Text("Kein Konto heißt genau @\(q.replacingOccurrences(of: "@", with: "")).").font(.footnote).foregroundStyle(IG.grau)
                 }.padding(.top, 30)
+            } else if q.isEmpty {
+                ScrollView { LumiEntdecken(pfad: $pfad) }
             } else {
                 Text("Gib den genauen Nutzernamen ein, den sie dir im Chat verraten hat.")
                     .font(.footnote).foregroundStyle(IG.grau).multilineTextAlignment(.center).padding(.top, 30)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.top, 6)
         .background(Color.black)
@@ -422,6 +446,7 @@ struct LumiKontoAnsicht: View {
     @Binding var pfad: NavigationPath
     var chatOeffnen: (Charakter) -> Void = { _ in }
     @State private var k: LumiKonto?
+    @State private var zeige: [LumiStory]?
 
     var body: some View {
         ScrollView {
@@ -429,7 +454,8 @@ struct LumiKontoAnsicht: View {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 24) {
-                        LumiAvatar(k: LumiKontoKurz(id: k.id, name: k.name, anzeige: k.anzeige, avatar: k.avatar), groesse: 84, ring: !k.istIch)
+                        LumiAvatar(k: LumiKontoKurz(id: k.id, name: k.name, anzeige: k.anzeige, avatar: k.avatar), groesse: 84, ring: !(k.storys ?? []).isEmpty)
+                            .onTapGesture { if let s = k.storys, !s.isEmpty { zeige = s } }
                         HStack(spacing: 0) {
                             zahl(k.postsAnzahl, "Beiträge").frame(maxWidth: .infinity)
                             zahl(k.follower, "Follower").frame(maxWidth: .infinity)
@@ -458,16 +484,13 @@ struct LumiKontoAnsicht: View {
                     }
                     }
                     .padding(.horizontal, 16)
+                    if let h = k.highlights, !h.isEmpty { LumiHighlights(highlights: h) { zeige = $0 } }
                     HStack { Spacer(); Image(systemName: "squareshape.split.3x3").font(.title3); Spacer() }
                         .padding(.vertical, 10)
                         .overlay(alignment: .bottom) { Rectangle().fill(.white).frame(height: 1).frame(maxWidth: 120) }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1.5), count: 3), spacing: 1.5) {
                         ForEach(k.posts) { p in
-                            Button { pfad.append(p) } label: {
-                                Color.clear.aspectRatio(3 / 4, contentMode: .fit)
-                                    .overlay { if let m = p.medien.first { NetzBild(pfad: m) } else { Text(p.text).font(.caption2).padding(6) } }
-                                    .clipped()
-                            }
+                            Button { pfad.append(p) } label: { LumiKachel(p: p) }
                             .buttonStyle(.plain)
                         }
                     }
@@ -480,7 +503,12 @@ struct LumiKontoAnsicht: View {
         .background(Color.black)
         .refreshable { await laden() }
         .task { await laden() }
+        .fullScreenCover(item: Binding(get: { zeige.map { StoryListe(storys: $0) } }, set: { if $0 == nil { zeige = nil } })) { l in
+            LumiStoryBlatt(storys: l.storys)
+        }
     }
+
+    private struct StoryListe: Identifiable { let storys: [LumiStory]; var id: String { storys.map(\.url).joined() } }
 
     private func zahl(_ n: Int, _ t: String) -> some View {
         VStack(spacing: 1) { Text(Lumi.zahl(n)).font(.headline); Text(t).font(.caption2).foregroundStyle(Farbe.text2) }
@@ -505,6 +533,8 @@ private struct LumiPostAnsicht: View {
     @Binding var pfad: NavigationPath
     @State private var kom: [LumiKommentar] = []
     @State private var text = ""
+    @State private var loeschen = false
+    @Environment(\.dismiss) private var schliessen
 
     var body: some View {
         VStack(spacing: 0) {
@@ -533,6 +563,18 @@ private struct LumiPostAnsicht: View {
         }
         .background(Color.black)
         .navigationTitle("Beitrag").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if post.konto.id == LumiStand.ichId {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) { loeschen = true } label: { Image(systemName: "trash") }
+                }
+            }
+        }
+        .confirmationDialog("Beitrag löschen?", isPresented: $loeschen, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                Task { _ = try? await v.roh("/api/lumi/posts/\(post.id)", methode: "DELETE"); schliessen() }
+            }
+        }
         .task {
             while !Task.isCancelled {
                 if let h: KomHuelle = try? await v.anfrage("/api/lumi/posts/\(post.id)/kommentare") { kom = h.kommentare }
