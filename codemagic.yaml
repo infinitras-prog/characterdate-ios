@@ -32,6 +32,10 @@ workflows:
           export DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
           export ASC_KEY_PATH="$RUNNER_TEMP/keys/AuthKey.p8"
+          # Prüfhilfe ohne Geheimnis: Kennung, Länge und Fingerabdruck des ÖFFENTLICHEN Schlüssels
+          echo "Schlüssel-Kennung: $ASC_KEY_ID · Team: $APPLE_TEAM_ID · Issuer-Länge: ${#ASC_ISSUER_ID}"
+          echo "Erste Zeile: $(head -1 "$ASC_KEY_PATH") · Zeilen: $(wc -l < "$ASC_KEY_PATH")"
+          echo "Fingerabdruck: $(openssl pkey -in "$ASC_KEY_PATH" -pubout -outform DER 2>/dev/null | shasum -a 256 | cut -c1-16)"
           python3 -m pip install --quiet --break-system-packages "pyjwt[crypto]" || python3 -m pip install --quiet "pyjwt[crypto]"
           python3 ci/signieren.py einrichten
           set -a; . "$GITHUB_ENV"; set +a
