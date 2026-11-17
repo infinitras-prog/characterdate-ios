@@ -1,0 +1,77 @@
+# CharacterDate AI für iPhone – Cloud-Build bei Codemagic (Mac M2, 500 Gratis-Minuten im Monat)
+#
+# Einmalig in Codemagic: Teams → Global variables / App → Environment variables, Gruppe »appstore« mit
+#   APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY (Inhalt der .p8-Datei)   – alle »Secret« anhaken.
+# Starten: in Codemagic »Start new build« → Workflow »TestFlight«. Gebaut wird nur auf Knopfdruck (spart Minuten).
+workflows:
+  testflight:
+    name: TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - appstore
+      xcode: latest
+    scripts:
+      - name: iOS-SDK prüfen (mindestens 26)
+        script: |
+          v=$(xcrun --sdk iphoneos --show-sdk-version | cut -d. -f1)
+          echo "iOS-SDK $(xcrun --sdk iphoneos --show-sdk-version)"
+          if [ "$v" -lt 26 ]; then echo "Kein iOS-26-SDK auf diesem Mac"; exit 1; fi
+      - name: Projekt erzeugen
+        script: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Signatur, Archiv und Upload zu TestFlight
+        script: |
+          set -eo pipefail
+          export RUNNER_TEMP="$CM_BUILD_DIR/tmp"; mkdir -p "$RUNNER_TEMP/keys"
+          export GITHUB_ENV="$RUNNER_TEMP/env.txt"; : > "$GITHUB_ENV"
+          export GITHUB_RUN_ID="cm-$BUILD_NUMBER"
+          export GITHUB_RUN_NUMBER=$((1000 + BUILD_NUMBER))   # TestFlight-Laufnummer immer höher als die alten GitHub-Builds
+          export DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey.p8"
+          export ASC_KEY_PATH="$RUNNER_TEMP/keys/AuthKey.p8"
+          python3 -m pip install --quiet --break-system-packages "pyjwt[crypto]" || python3 -m pip install --quiet "pyjwt[crypto]"
+          python3 ci/signieren.py einrichten
+          set -a; . "$GITHUB_ENV"; set +a
+          xcodebuild -project CharacterDate.xcodeproj -scheme CharacterDate -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
+            CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
+            MARKETING_VERSION="$(tr -d '[:space:]' < VERSION)" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $NX_KEYCHAIN" \
+            NX_PROFIL_APP="$NX_PROFIL_APP" NX_PROFIL_WIDGET="$NX_PROFIL_WIDGET" NX_PROFIL_PUSH="$NX_PROFIL_PUSH" \
+            archive | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
+          grep -q "ARCHIVE SUCCEEDED" archive.log
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>teamID</key><string>${DEVELOPMENT_TEAM}</string>
+            <key>provisioningProfiles</key><dict>
+              <key>de.infinitras.characterdate</key><string>${NX_PROFIL_APP}</string>
+              <key>de.infinitras.characterdate.widget</key><string>${NX_PROFIL_WIDGET}</string>
+              <key>de.infinitras.characterdate.push</key><string>${NX_PROFIL_PUSH}</string>
+            </dict>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tee export.log
+          grep -qE "EXPORT SUCCEEDED|Upload succeeded|Uploaded" export.log
+      - name: Schlüssel löschen
+        script: |
+          RUNNER_TEMP="$CM_BUILD_DIR/tmp" python3 ci/signieren.py aufraeumen || true
+          rm -rf "$CM_BUILD_DIR/tmp/keys"
+    artifacts:
+      - archive.log
+      - export.log

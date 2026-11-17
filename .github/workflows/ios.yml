@@ -7,9 +7,8 @@
 #      APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY
 name: iOS
 
+# Bauen nur noch auf Knopfdruck – Mac-Minuten sind knapp (Hauptweg ist jetzt Codemagic, siehe codemagic.yaml)
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       testflight:
