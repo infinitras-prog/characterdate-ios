@@ -260,6 +260,7 @@ struct AlleEinstellungen: View {
     }
 
     @ViewBuilder private var inhalt: some View {
+        Section { GeburtstagZeile() } header: { Text("Über dich") } footer: { Text("Dann gratulieren dir deine Charaktere.") }
         Section { TankKarte() } header: { Label("Swipe-Tank", systemImage: "flame.fill") }
         Section {
             Picker("Realismus", selection: bindung("realismus", "natuerlich")) {
@@ -313,6 +314,7 @@ struct AlleEinstellungen: View {
         } header: { Text("Stimme & Anrufe") }
         Section {
             Toggle("Lumigram lebt von selbst", isOn: bindung("lumigram.an", true))
+            Toggle("3D für Fotos und Videos (im Leerlauf)", isOn: bindung("vr.auto", true))
             Picker("Reels pro Tag", selection: bindung("lumigram.reels_pro_tag", 2)) {
                 Text("0").tag(0); Text("1").tag(1); Text("2").tag(2); Text("4").tag(4); Text("8").tag(8)
             }.pickerStyle(.segmented)
@@ -323,5 +325,33 @@ struct AlleEinstellungen: View {
             Toggle("Sie ruft an", isOn: bindung("push.anrufe", true))
             Toggle("Text auf dem Sperrbildschirm", isOn: bindung("push.vorschau", true))
         } header: { Text("Mitteilungen") } footer: { Text("Kommen nur, wenn die App gerade nicht verbunden ist.") }
+    }
+}
+
+
+/// Dein Geburtstag (TT.MM.) – nur dieses Feld, das übrige Profil bleibt unberührt.
+struct GeburtstagZeile: View {
+    @Environment(Verbindung.self) private var v
+    @State private var text = ""
+    @State private var gespeichert = false
+    private struct P: Decodable { var geburtstag: String? }
+    private struct G: Encodable { let geburtstag: String }
+
+    var body: some View {
+        HStack {
+            Text("Geburtstag")
+            Spacer()
+            TextField("TT.MM.", text: $text).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing).frame(width: 90)
+                .onSubmit { Task { await sichern() } }
+            if gespeichert { Image(systemName: "checkmark").foregroundStyle(.green) }
+        }
+        .task { if let p: P = try? await v.anfrage("/api/profil") { text = p.geburtstag ?? "" } }
+    }
+
+    @MainActor private func sichern() async {
+        if (try? await v.roh("/api/profil/geburtstag", methode: "PUT", body: G(geburtstag: text))) != nil {
+            gespeichert = true
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
     }
 }

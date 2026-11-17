@@ -162,6 +162,9 @@ struct BildVollbild: View {
     @State private var arbeitet = false
     @State private var neuLaeuft = false
     @State private var loeschenFrage = false
+    @State private var wackel: String?          // 3D-Wackelbild (räumliches Foto)
+    @State private var drei = false
+    @State private var dreiLaeuft = false
     private var lager: Erstellungen { Erstellungen.shared }
 
     private struct NeuesBild: Decodable { let id: String; let url: String }
@@ -169,7 +172,14 @@ struct BildVollbild: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            NetzBild(pfad: pfad.isEmpty ? bild.pfad : pfad, modus: .fit).id(pfad)
+            if drei, let w = wackel {
+                ChatVideo(pfad: w).aspectRatio(contentMode: .fit).id("3d" + w)
+            } else {
+                NetzBild(pfad: pfad.isEmpty ? bild.pfad : pfad, modus: .fit).id(pfad)
+            }
+            if dreiLaeuft {
+                VStack(spacing: 10) { ProgressView().tint(.white); Text("3D entsteht …").font(.footnote) }.padding(18).glas()
+            }
             if arbeitet {
                 VStack(spacing: 10) { ProgressView().tint(.white); Text("Foto wird geändert …").font(.footnote) }
                     .padding(18).glas()
@@ -192,6 +202,11 @@ struct BildVollbild: View {
                     Button { Task { await sichern() } } label: { Label("In Fotos sichern", systemImage: "square.and.arrow.down") }
                         .buttonStyle(HauptKnopf())
                     if bildId != nil {
+                        Button { Task { await dreiD() } } label: {
+                            Label("3D", systemImage: drei ? "cube.fill" : "cube")
+                        }
+                        .buttonStyle(HauptKnopf(farbe: AnyShapeStyle(drei ? AnyShapeStyle(Farbe.verlauf) : AnyShapeStyle(Color.white.opacity(0.18)))))
+                        .disabled(dreiLaeuft)
                         Menu {
                             Button { aendernOffen = true } label: { Label("Ändern …", systemImage: "wand.and.stars") }
                             Button { Task { await neuErzeugen() } } label: { Label("Neu erzeugen", systemImage: "arrow.triangle.2.circlepath") }
@@ -205,6 +220,9 @@ struct BildVollbild: View {
             }
         }
         .onAppear { pfad = bild.pfad; bildId = bild.bildId }
+        .task {
+            if let id = bild.bildId, let b: Bild = try? await v.anfrage("/api/bilder/\(id)") { wackel = b.meta?["wackel"]?.text }
+        }
         .confirmationDialog("Foto löschen?", isPresented: $loeschenFrage, titleVisibility: .visible) {
             Button("Löschen", role: .destructive) { Task { await loeschen() } }
         } message: { Text("Das Foto verschwindet aus Galerie und Chat. Das lässt sich nicht rückgängig machen.") }
@@ -235,6 +253,20 @@ struct BildVollbild: View {
             }
         }
         .padding(16).glas().padding(14)
+    }
+
+    /// 3D: Wackelbild zeigen – fehlt es noch, wird es am PC erzeugt (Tiefe + Parallaxe, ca. 10–30 s).
+    @MainActor private func dreiD() async {
+        if wackel != nil { drei.toggle(); return }
+        guard let id = bildId else { return }
+        dreiLaeuft = true
+        defer { dreiLaeuft = false }
+        do {
+            let b: Bild = try await v.anfrage("/api/bilder/\(id)/3d", methode: "POST", zeit: 600)
+            wackel = b.meta?["wackel"]?.text
+            drei = wackel != nil
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch { meldung = error.localizedDescription }
     }
 
     @MainActor private func neuErzeugen() async {
