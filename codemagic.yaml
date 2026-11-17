@@ -42,7 +42,8 @@ workflows:
           echo "Fingerabdruck: $(openssl pkey -in "$ASC_KEY_PATH" -pubout -outform DER 2>/dev/null | shasum -a 256 | cut -c1-16)"
           python3 -m pip install --quiet --break-system-packages "pyjwt[crypto]" || python3 -m pip install --quiet "pyjwt[crypto]"
           python3 ci/signieren.py einrichten
-          set -a; . "$GITHUB_ENV"; set +a
+          while IFS= read -r zeile; do [ -n "$zeile" ] && export "${zeile%%=*}=${zeile#*=}"; done < "$GITHUB_ENV"
+          echo "Profile: $NX_PROFIL_APP | $NX_PROFIL_WIDGET | $NX_PROFIL_PUSH"
           xcodebuild -project CharacterDate.xcodeproj -scheme CharacterDate -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
             CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
