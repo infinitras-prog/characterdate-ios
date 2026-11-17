@@ -21,6 +21,7 @@ workflows:
       - name: Projekt erzeugen
         script: |
           brew install xcodegen
+          export DEVELOPMENT_TEAM="$(printf '%s' "$APPLE_TEAM_ID" | grep -oE '[A-Z0-9]{10}' | head -1)"
           xcodegen generate
       - name: Signatur, Archiv und Upload zu TestFlight
         script: |
@@ -48,7 +49,7 @@ workflows:
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/CharacterDate.xcarchive" \
             CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
             MARKETING_VERSION="$(tr -d '[:space:]' < VERSION)" \
-            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             OTHER_CODE_SIGN_FLAGS="--keychain $NX_KEYCHAIN" \
             NX_PROFIL_APP="$NX_PROFIL_APP" NX_PROFIL_WIDGET="$NX_PROFIL_WIDGET" NX_PROFIL_PUSH="$NX_PROFIL_PUSH" \
             archive | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
