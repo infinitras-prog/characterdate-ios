@@ -32,15 +32,26 @@ def token():
 
 
 def api(methode, pfad, daten=None):
-    req = urllib.request.Request(API + pfad, method=methode, data=json.dumps(daten).encode() if daten else None,
-                                 headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as a:
-            roh = a.read()
-            return json.loads(roh) if roh else {}
-    except urllib.error.HTTPError as e:
-        text = e.read().decode("utf-8", "ignore")
-        raise SystemExit("::error::App-Store-Connect %s %s -> %s: %s" % (methode, pfad.split("?")[0], e.code, text[:600]))
+    # Apple antwortet gelegentlich mit 5xx (z. B. direkt nach dem Widerrufen eines Zertifikats) → mehrmals versuchen
+    for versuch in range(6):
+        req = urllib.request.Request(API + pfad, method=methode, data=json.dumps(daten).encode() if daten else None,
+                                     headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as a:
+                roh = a.read()
+                return json.loads(roh) if roh else {}
+        except urllib.error.HTTPError as e:
+            text = e.read().decode("utf-8", "ignore")
+            if (e.code >= 500 or e.code == 429) and versuch < 5:
+                warte = 15 * (versuch + 1)
+                print("Apple meldet %s bei %s %s – neuer Versuch in %d s" % (e.code, methode, pfad.split("?")[0], warte))
+                time.sleep(warte)
+                continue
+            raise SystemExit("::error::App-Store-Connect %s %s -> %s: %s" % (methode, pfad.split("?")[0], e.code, text[:600]))
+        except urllib.error.URLError as e:
+            if versuch < 5:
+                time.sleep(10); continue
+            raise SystemExit("::error::App-Store-Connect nicht erreichbar: %s" % e)
 
 
 def sh(*args, **kw):
