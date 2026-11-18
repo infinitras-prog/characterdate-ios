@@ -72,7 +72,7 @@ struct LumiReels: View {
                     VStack(spacing: 10) {
                         Image(systemName: "play.rectangle").font(.system(size: 54, weight: .thin))
                         Text("Noch keine Reels").font(.headline)
-                        Text("Reels entstehen im Leerlauf am PC – Charaktere und Creator posten über den Tag.")
+                        Text("Reels sind kurze Videos – sie entstehen, wenn du 30 s nicht am PC bist.")
                             .font(.footnote).foregroundStyle(IG.grau).multilineTextAlignment(.center)
                     }.padding(40)
                 } else {

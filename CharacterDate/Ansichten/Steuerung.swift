@@ -318,7 +318,7 @@ struct AlleEinstellungen: View {
             Picker("Reels pro Tag", selection: bindung("lumigram.reels_pro_tag", 2)) {
                 Text("0").tag(0); Text("1").tag(1); Text("2").tag(2); Text("4").tag(4); Text("8").tag(8)
             }.pickerStyle(.segmented)
-        } header: { Text("Lumigram") } footer: { Text("Charaktere und Creator posten über den Tag, erzeugt im Leerlauf am PC.") }
+        } header: { Text("Lumigram") } footer: { Text("Charaktere, Swipe-Profile, Creator und Fremde posten über den Tag. Reels (Videos), Tank und Fremde entstehen nur, wenn du 30 s nicht am PC bist.") }
         Section {
             Toggle("Mitteilungen", isOn: bindung("push.an", true))
             Toggle("Neue Nachrichten", isOn: bindung("push.nachrichten", true))
