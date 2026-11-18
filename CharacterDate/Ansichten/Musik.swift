@@ -104,6 +104,15 @@ struct LiedBlatt: View {
     @State private var alleGenres: [String] = []
     @State private var arbeitet = false
     @State private var fehler: String?
+    // Schritt 1: Text wird erkannt (Song schon zerlegt) – du kannst ihn vor dem Cover umschreiben
+    struct Erkannt: Decodable { let upload: String; let titel: String?; let text: String; let instrumental: Bool? }
+    @State private var erkannt: Erkannt?
+    @State private var text = ""
+    @State private var erkennt = false
+    private var geaendert: Bool {
+        guard let e = erkannt else { return false }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines) != e.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         NavigationStack {
@@ -111,6 +120,20 @@ struct LiedBlatt: View {
                 Section {
                     Button { waehlen = true } label: {
                         Label(datei?.lastPathComponent ?? "Lied auswählen (MP3, WAV, M4A …)", systemImage: "music.note.list")
+                    }
+                }
+                if datei != nil {
+                    Section {
+                        if erkennt {
+                            HStack(spacing: 10) { ProgressView(); Text("Gesang wird getrennt und der Text erkannt …").font(.callout) }
+                        } else {
+                            TextEditor(text: $text).frame(minHeight: 170).font(.callout)
+                        }
+                    } header: {
+                        Text(erkannt?.instrumental == true ? "Songtext – kein Gesang erkannt" : geaendert ? "Songtext – geändert" : "Songtext")
+                    } footer: {
+                        Text(geaendert ? "Mit geändertem Text singt sie das Lied neu (nach der Originalmelodie)."
+                                       : "Erkannt – du kannst ihn vor dem Aufnehmen umschreiben. Eine Zeile je Gesangsphrase.")
                     }
                 }
                 Section {
@@ -161,7 +184,7 @@ struct LiedBlatt: View {
                 Section {
                     Button { Task { await los() } } label: {
                         Label(arbeitet ? "Lädt hoch …" : "Cover aufnehmen", systemImage: "mic.fill").frame(maxWidth: .infinity)
-                    }.buttonStyle(HauptKnopf()).disabled(arbeitet || datei == nil).listRowBackground(Color.clear)
+                    }.buttonStyle(HauptKnopf()).disabled(arbeitet || erkennt || datei == nil).listRowBackground(Color.clear)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -174,7 +197,7 @@ struct LiedBlatt: View {
                 if let g: G = try? await v.anfrage("/api/musik/genres") { alleGenres = g.genres }
             }
             .fileImporter(isPresented: $waehlen, allowedContentTypes: [.audio, .mp3, .wav, .mpeg4Audio]) { r in
-                if case .success(let u) = r { datei = u }
+                if case .success(let u) = r { datei = u; Task { await erkennen(u) } }
             }
         }
     }
@@ -187,7 +210,34 @@ struct LiedBlatt: View {
         return "komplett neu gedacht"
     }
 
+    @MainActor private func erkennen(_ u: URL) async {
+        erkannt = nil; text = ""; erkennt = true; defer { erkennt = false }
+        let zugriff = u.startAccessingSecurityScopedResource()
+        defer { if zugriff { u.stopAccessingSecurityScopedResource() } }
+        do {
+            let d = try Data(contentsOf: u)
+            let typ = UTType(filenameExtension: u.pathExtension)?.preferredMIMEType ?? "audio/mpeg"
+            let e: Erkannt = try await v.hochladen("/api/charaktere/\(c.id)/lied/text", datei: d, name: u.lastPathComponent, typ: typ)
+            guard datei == u else { return }
+            erkannt = e; text = e.text
+        } catch { fehler = "Text erkennen ging nicht (\(error.localizedDescription)) – das Cover geht trotzdem." }
+    }
+
     @MainActor private func los() async {
+        if let e = erkannt {
+            arbeitet = true; defer { arbeitet = false }
+            do {
+                struct A: Decodable {}
+                let _: A = try await v.hochladen("/api/charaktere/\(c.id)/lied", datei: Data(), name: "leer.mp3", typ: "audio/mpeg",
+                                                 felder: ["upload": e.upload, "titel": e.titel ?? "", "lyrics": text,
+                                                          "prompt": prompt.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                          "aehnlichkeit": String(Int(naehe)), "genres": genres.joined(separator: ","),
+                                                          "musikvideo": video ? "1" : "0"])
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                schliessen()
+            } catch { fehler = error.localizedDescription }
+            return
+        }
         guard let u = datei else { return }
         arbeitet = true; defer { arbeitet = false }
         let zugriff = u.startAccessingSecurityScopedResource()
