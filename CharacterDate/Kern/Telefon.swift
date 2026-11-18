@@ -33,9 +33,15 @@ final class Telefon {
     /// Freizeichen über einen eigenen Player – nicht durch die Sprachverarbeitung (Echo-/Rauschfilter schluckten den Ton)
     private var freizeichen: AVAudioPlayer?
     private var stimmFormat: AVAudioFormat?
-    private var wandler: AVAudioConverter?
     private let zielFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var audioLaeuft = false
+    /// Darf das Mikrofon gerade senden? (vom Audio-Thread gelesen – nicht das @Observable-Feld »zustand« dort lesen)
+    @ObservationIgnored private var sendenErlaubt = false
+    @ObservationIgnored private var mikroPakete = 0
+    @ObservationIgnored private var mikroSpitze: Float = 0
+    @ObservationIgnored private var mikroRest: [Float] = []
+    @ObservationIgnored private var mikroPos: Double = 0
+    @ObservationIgnored private var konfigBeobachter: NSObjectProtocol?
     private var verbindung: Verbindung?
     private var charId = ""
 
@@ -52,6 +58,14 @@ final class Telefon {
         // Telefonat: Hörmuschel (Handy ans Ohr, Display aus); Videoanruf: Lautsprecher
         lautsprecher = video
         sitzungEinrichten()
+        // Mikrofon-Erlaubnis ausdrücklich holen – ohne sie liefert iOS nur Stille (Anruf läuft, aber sie hört nichts)
+        AVAudioApplication.requestRecordPermission { [weak self] ok in
+            guard let self, !ok else { return }
+            Task { @MainActor in
+                self.info = "Kein Zugriff aufs Mikrofon – in den iPhone-Einstellungen › CharacterDate › Mikrofon erlauben."
+                self.melden("Mikrofon-Erlaubnis verweigert")
+            }
+        }
         do { try AVAudioSession.sharedInstance().setActive(true) }
         catch { letzterFehler = "Audio-Sitzung: \(error.localizedDescription)"; melden(letzterFehler!) }
         try? AVAudioSession.sharedInstance().overrideOutputAudioPort(lautsprecher ? .speaker : .none)
@@ -75,6 +89,7 @@ final class Telefon {
     @MainActor
     func setzeStumm(_ an: Bool) {
         stumm = an
+        sendenErlaubt = zustand == .aktiv && !an
         senden(["typ": "stumm", "an": an])
     }
 
@@ -101,8 +116,10 @@ final class Telefon {
         if let g, grund == nil { grund = g }
         if zustand != .beendet {
             let dauer = start.map { Int(Date().timeIntervalSince($0)) } ?? 0
-            melden("Anruf endet: Zustand \(zustand), Grund \(g ?? "–"), nach \(dauer) s, letzter Fehler \(letzterFehler ?? "–")")
+            melden("Anruf endet: Zustand \(zustand), Grund \(g ?? "–"), nach \(dauer) s, Mikro-Pakete \(mikroPakete), "
+                   + "Spitze \(String(format: "%.3f", mikroSpitze)), letzter Fehler \(letzterFehler ?? "–")")
         }
+        sendenErlaubt = false
         if zustand != .beendet {
             senden(["typ": "auflegen"])
             zustand = .beendet
@@ -181,6 +198,15 @@ final class Telefon {
                 info = nil
                 zustand = .aktiv
                 start = Date()
+                sendenErlaubt = !stumm
+                // Nach dem Freizeichen kann iOS die Audio-Einheit umgebaut haben → Aufnahme nach 4 s prüfen
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                    guard let self, self.zustand == .aktiv else { return }
+                    let laeuft = self.engine.isRunning
+                    self.melden("Mikro nach 4 s: \(self.mikroPakete) Pakete, Spitze \(String(format: "%.3f", self.mikroSpitze)), "
+                                + "Engine läuft: \(laeuft), Eingang \(self.engine.inputNode.outputFormat(forBus: 0))")
+                    if !laeuft || self.mikroPakete == 0 { self.audioNeustarten("kein Mikrofonton nach 4 s") }
+                }
                 UIDevice.current.isProximityMonitoringEnabled = !lautsprecher
             case "verpasst", "beendet":
                 beenden(grund: d["grund"] as? String ?? (z == "verpasst" ? "Nicht erreicht." : nil))
@@ -228,10 +254,15 @@ final class Telefon {
             Task { @MainActor in self.beenden(grund: "Kein Mikrofon verfügbar.") }
             return
         }
-        wandler = AVAudioConverter(from: eingang, to: zielFormat)
-        wandler?.downmix = true
         ein.installTap(onBus: 0, bufferSize: 1024, format: eingang) { [weak self] puffer, _ in
             self?.mikrofon(puffer)
+        }
+        if konfigBeobachter == nil {
+            // iOS baut die Audio-Einheit um (Freizeichen, Lautsprecher, Kopfhörer) → die Engine stoppt still; neu starten
+            konfigBeobachter = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
+                                                                       queue: .main) { [weak self] _ in
+                self?.audioNeustarten("Audio-Konfiguration geändert")
+            }
         }
         engine.prepare()
         do {
@@ -244,7 +275,22 @@ final class Telefon {
         }
     }
 
+    func audioNeustarten(_ grund: String) {
+        guard zustand != .beendet else { return }
+        melden("Audio neu gestartet: \(grund)")
+        if audioLaeuft {
+            audioLaeuft = false
+            engine.inputNode.removeTap(onBus: 0)
+            stimme.stop()
+            engine.stop()
+        }
+        mikroRest = []
+        mikroPos = 0
+        audioStarten()
+    }
+
     func audioStoppen() {
+        if let b = konfigBeobachter { NotificationCenter.default.removeObserver(b); konfigBeobachter = nil }
         guard audioLaeuft else { return }
         audioLaeuft = false
         engine.inputNode.removeTap(onBus: 0)
@@ -252,31 +298,49 @@ final class Telefon {
         engine.stop()
     }
 
+    /// Mikrofon → 16 kHz PCM16 mono, selbst heruntergerechnet (Mittelwert je Fenster, wie am PC). Kein AVAudioConverter:
+    /// der lieferte mit Sprachverarbeitung auf manchen iPhones nur Nullen.
     private func mikrofon(_ puffer: AVAudioPCMBuffer) {
-        guard let w = wandler, let s = socket else { return }
-        let aktiv = zustand == .aktiv && !stumm
-        // Pegel fürs Leuchten
-        if let k = puffer.floatChannelData?[0] {
-            var summe: Float = 0
-            let n = Int(puffer.frameLength)
-            for i in stride(from: 0, to: n, by: 4) { summe += k[i] * k[i] }
-            let p = min(1, sqrt(summe / Float(max(1, n / 4))) * 8)
-            Task { @MainActor in self.pegelDu = aktiv ? p : 0 }
-        }
+        guard let s = socket else { return }
+        let n = Int(puffer.frameLength)
+        guard n > 0 else { return }
+        var mono = [Float](repeating: 0, count: n)
+        if let k = puffer.floatChannelData {
+            let kanaele = Int(puffer.format.channelCount)
+            for c in 0..<max(1, min(kanaele, 2)) { for i in 0..<n { mono[i] += k[c][i] } }
+            if kanaele >= 2 { for i in 0..<n { mono[i] *= 0.5 } }
+        } else if let k = puffer.int16ChannelData {
+            for i in 0..<n { mono[i] = Float(k[0][i]) / 32768 }
+        } else { return }
+        // Pegel fürs Leuchten und für die Diagnose
+        var summe: Float = 0
+        for i in stride(from: 0, to: n, by: 4) { summe += mono[i] * mono[i] }
+        let rms = sqrt(summe / Float(max(1, n / 4)))
+        let aktiv = sendenErlaubt
+        Task { @MainActor in self.pegelDu = aktiv ? min(1, rms * 8) : 0 }
         guard aktiv else { return }
-        let kap = AVAudioFrameCount(Double(puffer.frameLength) * zielFormat.sampleRate / puffer.format.sampleRate) + 32
-        guard let aus = AVAudioPCMBuffer(pcmFormat: zielFormat, frameCapacity: kap) else { return }
-        var geliefert = false
-        var fehler: NSError?
-        w.convert(to: aus, error: &fehler) { _, status in
-            if geliefert { status.pointee = .noDataNow; return nil }
-            geliefert = true
-            status.pointee = .haveData
-            return puffer
+        mikroSpitze = max(mikroSpitze, rms)
+        // Herunterrechnen auf 16 kHz
+        let verhaeltnis = puffer.format.sampleRate / 16000
+        let daten = mikroRest + mono
+        var aus = [Int16]()
+        aus.reserveCapacity(Int(Double(daten.count) / verhaeltnis) + 2)
+        var pos = mikroPos
+        while Int(pos + verhaeltnis) <= daten.count {
+            let a = Int(pos), b = max(a + 1, Int(pos + verhaeltnis))
+            var w: Float = 0
+            for i in a..<b { w += daten[i] }
+            w /= Float(b - a)
+            aus.append(Int16(max(-1, min(1, w)) * 32767))
+            pos += verhaeltnis
         }
-        guard fehler == nil, aus.frameLength > 0, let z = aus.int16ChannelData?[0] else { return }
-        let daten = Data(bytes: z, count: Int(aus.frameLength) * 2)
-        s.send(.data(daten)) { _ in }
+        let verbraucht = min(daten.count, Int(pos))
+        mikroRest = Array(daten[verbraucht...])
+        mikroPos = pos - Double(verbraucht)
+        guard !aus.isEmpty else { return }
+        mikroPakete += 1
+        let bytes = aus.withUnsafeBufferPointer { Data(buffer: $0) }
+        s.send(.data(bytes)) { [weak self] f in if let f { self?.letzterFehler = "Mikro senden: \(f.localizedDescription)" } }
     }
 
     @MainActor
