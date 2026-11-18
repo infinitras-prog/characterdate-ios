@@ -7,6 +7,8 @@ struct AnrufAnsicht: View {
     let c: Charakter
     var video = false
     var eingehend = false
+    /// Schon über CallKit angenommen (läuft bereits) → dieses Telefon zeigen statt neu zu wählen
+    var vorhanden: Telefon? = nil
     @State private var telefon = Telefon()
     @State private var puls = false
     @State private var portraet: UIImage?
@@ -19,7 +21,6 @@ struct AnrufAnsicht: View {
     @FocusState private var tippFokus: Bool
     @State private var ort: String?
     @State private var abo: UUID?
-    @State private var welle = Wellenform()
 
     var body: some View {
         ZStack {
@@ -111,7 +112,6 @@ struct AnrufAnsicht: View {
                     untertitel
                     if !video { Spacer() }
                 }
-                WellenLeiste(welle: welle).padding(.horizontal, 24)
                 knoepfe.padding(.bottom, 30)
             }
             .foregroundStyle(.white)
@@ -160,14 +160,12 @@ struct AnrufAnsicht: View {
             }
         }
         .onAppear {
-            telefon.starten(v, char: c, eingehend: eingehend, video: video)
-            welle.starten(telefon)
+            if let t = vorhanden { telefon = t } else { telefon.starten(v, char: c, eingehend: eingehend, video: video) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {   // erst nach dem Layout, sonst wandert die Ansicht mit
                 withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { puls = true }
             }
         }
         .onDisappear {
-            welle.stoppen()
             if telefon.zustand != .beendet {
                 telefon.melden("Anrufbildschirm verschwand, während der Anruf noch lief (Zustand \(telefon.zustand))")
                 telefon.beenden()
@@ -222,12 +220,28 @@ struct AnrufAnsicht: View {
                     .transition(.opacity).id("sie" + telefon.sieText)
             }
             if !telefon.duText.isEmpty {
-                Text("Du: \(telefon.duText)").font(.subheadline).foregroundStyle(Farbe.text2).multilineTextAlignment(.center)
-                    .transition(.opacity).id("du" + telefon.duText)
+                // Dein Gesprochenes als eigene Sprechblase – wie live mitgeschrieben
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "mic.fill").font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24).background(.white.opacity(0.22), in: Circle())
+                    Text(telefon.duText).font(.callout).multilineTextAlignment(.leading)
+                }
+                .padding(.vertical, 10).padding(.leading, 10).padding(.trailing, 16)
+                .background(LinearGradient(colors: [Farbe.violett.opacity(0.6), Farbe.rose.opacity(0.55)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20,
+                                                       bottomTrailingRadius: 6, topTrailingRadius: 20, style: .continuous))
+                .overlay(UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20,
+                                                bottomTrailingRadius: 6, topTrailingRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.22), lineWidth: 1))
+                .shadow(color: Farbe.rose.opacity(0.3), radius: 14, y: 6)
+                .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 12)),
+                                        removal: .opacity))
+                .id("du" + telefon.duText)
             }
         }
         .padding(.horizontal, 28)
-        .animation(.easeOut(duration: 0.3), value: telefon.sieText + telefon.duText)
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: telefon.sieText + telefon.duText)
         .frame(minHeight: 110)
     }
 

@@ -1,3 +1,4 @@
+import AudioToolbox
 import Foundation
 import Observation
 import Security
@@ -19,6 +20,7 @@ final class Verbindung {
     var iphoneAktiv: Bool { aktivesGeraet == "iphone" }
 
     private var schluessel: String? = Schluesselbund.lesen("geraet")
+    @ObservationIgnored private var letzterTon = Date.distantPast
     private var socket: URLSessionWebSocketTask?
     private var hoerer: [UUID: (Ereignis) -> Void] = [:]
     private let sitzung: URLSession = {
@@ -268,6 +270,21 @@ final class Verbindung {
         return s
     }
 
+    /// App geht in den Hintergrund: Ereignis-Kanal schließen, damit der PC Nachrichten als Mitteilung (mit Ton) schickt –
+    /// sonst gilt das iPhone noch eine Weile als »verbunden« und es kommt gar nichts.
+    func hintergrund() {
+        guard !Telefon.laeuft, let s = socket else { return }
+        socket = nil
+        s.cancel(with: .goingAway, reason: nil)
+    }
+
+    /// Zurück im Vordergrund: Kanal wieder öffnen (verpasste Nachrichten holt die Liste nach).
+    func vordergrund() {
+        guard zustand == .verbunden, socket == nil else { return }
+        ereignisseStarten()
+        Task { await neuLaden() }
+    }
+
     private func ereignisseStarten() {
         socket?.cancel()
         guard let b = basis, var teile = URLComponents(url: b, resolvingAgainstBaseURL: false) else { return }
@@ -317,6 +334,13 @@ final class Verbindung {
             if e.typ == "tippt" { charaktere[i].tippt = e.roh["an"] as? Bool }
             if e.typ == "nachricht", let n = e.nachricht {
                 charaktere[i].letzte = Letzte(text: n.text, rolle: n.rolle, zustellen: n.zustellen)
+                // Nachrichtenton wie in echten Messengern (nicht im Anruf, nicht für Platzhalter »entsteht«)
+                if n.rolle == "char", !Telefon.laeuft, UIApplication.shared.applicationState == .active,
+                   ((e.roh["nachricht"] as? [String: Any])?["meta"] as? [String: Any])?["status"] as? String != "entsteht",
+                   Date().timeIntervalSince(letzterTon) > 1.2 {
+                    letzterTon = Date()
+                    AudioServicesPlaySystemSound(1003)
+                }
             }
             if e.typ == "beziehung" { Task { await neuLaden() } }
         }

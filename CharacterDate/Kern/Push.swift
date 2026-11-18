@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        Rufe.shared.einrichten()           // echte Anrufe (VoIP-Push → CallKit), auch wenn die App geschlossen ist
         return true
     }
 

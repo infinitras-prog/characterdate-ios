@@ -40,7 +40,9 @@ struct HauptAnsicht: View {
         }
         .onAppear {
             abo = v.abonnieren { e in
-                if e.typ == "eingehender_anruf", angenommen == nil, !Telefon.laeuft, let cid = e.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
+                // klingelt als echter Anruf (CallKit) → dort annehmen, nicht zusätzlich in der App
+                if e.typ == "eingehender_anruf", (e.roh["callkit"] as? Bool) != true, angenommen == nil, !Telefon.laeuft,
+                   let cid = e.charId, let c = v.charaktere.first(where: { $0.id == cid }) {
                     ruft = Klingeln(c: c, video: e.roh["video"] as? Bool ?? false)
                 }
                 // Klingeln vorbei (sie hat aufgelegt / verpasst) – aber nie ein schon angenommenes Gespräch schließen
@@ -68,6 +70,8 @@ struct HauptAnsicht: View {
             zielAbarbeiten()
             await Push.shared.einrichten()
             await Push.shared.anmelden(v)
+            Rufe.shared.verbindung = v
+            await Rufe.shared.tokenMelden()
             await WidgetSchreiber.aktualisieren(v)
         }
         .onChange(of: Push.shared.ziel) { _, _ in zielAbarbeiten() }
@@ -75,9 +79,19 @@ struct HauptAnsicht: View {
         // Klingeln und Gespräch in EINEM Vollbild: Beim Abheben wechselt der Inhalt direkt zum Anruf. Früher schloss sich
         // das Klingel-Fenster und 0,4 s später öffnete das Anruf-Fenster – in der Lücke meldete der PC noch »klingelt«,
         // das Klingeln kam zurück und beide Fenster schoben sich gegenseitig weg → Anruf endete beim Abheben.
-        .fullScreenCover(item: $ruft, onDismiss: { angenommen = nil }) { k in
+        .onChange(of: RufZustand.shared.angenommen) { _, r in
+            // Über den System-Anrufbildschirm angenommen → Gespräch zeigen (läuft schon)
+            guard let r, let c = v.charaktere.first(where: { $0.id == r.charId }) else { return }
+            angenommen = Klingeln(c: c, video: r.video)
+            ruft = Klingeln(c: c, video: r.video)
+        }
+        .fullScreenCover(item: $ruft, onDismiss: {
+            angenommen = nil
+            RufZustand.shared.angenommen = nil
+            RufZustand.shared.telefon = nil
+        }) { k in
             if let a = angenommen, a.c.id == k.c.id {
-                AnrufAnsicht(c: a.c, video: a.video, eingehend: true)
+                AnrufAnsicht(c: a.c, video: a.video, eingehend: true, vorhanden: RufZustand.shared.telefon)
             } else {
                 KlingelAnsicht(k: k) { video in
                     angenommen = Klingeln(c: k.c, video: video)
@@ -91,14 +105,14 @@ struct HauptAnsicht: View {
 }
 
 extension HauptAnsicht {
-    private struct KlingeltGerade: Decodable { let charId: String; let video: Bool? }
+    private struct KlingeltGerade: Decodable { let charId: String; let video: Bool?; let callkit: Bool? }
 
     /// Gerade erst verbunden (z. B. über die Mitteilung »sie ruft an« geöffnet): klingelt es noch?
     @MainActor
     func klingeltPruefen() async {
         guard ruft == nil, angenommen == nil, !Telefon.laeuft,
               let l: [KlingeltGerade] = try? await v.anfrage("/api/anruf/klingelt"),
-              let k = l.first, let c = v.charaktere.first(where: { $0.id == k.charId }) else { return }
+              let k = l.first, k.callkit != true, let c = v.charaktere.first(where: { $0.id == k.charId }) else { return }
         ruft = Klingeln(c: c, video: k.video ?? false)
     }
 

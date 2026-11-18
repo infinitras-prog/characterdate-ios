@@ -48,10 +48,13 @@ final class Telefon {
     // MARK: Start / Ende
 
     @ObservationIgnored var eingehend = false
+    /// Über CallKit angenommen: die Audio-Sitzung aktiviert CallKit, Mikrofon/Stimme starten erst in »didActivate«
+    @ObservationIgnored var perCallKit = false
 
     @MainActor
-    func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false, video: Bool = false) {
+    func starten(_ v: Verbindung, char: Charakter, eingehend: Bool = false, video: Bool = false, callKit: Bool = false) {
         self.eingehend = eingehend
+        perCallKit = callKit
         Telefon.laeuft = true
         verbindung = v
         charId = char.id
@@ -66,11 +69,22 @@ final class Telefon {
                 self.melden("Mikrofon-Erlaubnis verweigert")
             }
         }
-        do { try AVAudioSession.sharedInstance().setActive(true) }
-        catch { letzterFehler = "Audio-Sitzung: \(error.localizedDescription)"; melden(letzterFehler!) }
-        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(lautsprecher ? .speaker : .none)
-        audioStarten()
-        freizeichenStarten()                 // »tuut … tuut« schon beim Wählen, bis sie wirklich dran ist
+        if callKit {
+            // CallKit aktiviert die Sitzung selbst – falls »didActivate« ausbleibt, nach 2 s trotzdem starten
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !self.audioLaeuft, self.zustand != .beendet else { return }
+                self.melden("CallKit: didActivate kam nicht – Audio selbst gestartet")
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self.callKitAudioBereit()
+            }
+        } else {
+            do { try AVAudioSession.sharedInstance().setActive(true) }
+            catch { letzterFehler = "Audio-Sitzung: \(error.localizedDescription)"; melden(letzterFehler!) }
+            try? AVAudioSession.sharedInstance().overrideOutputAudioPort(lautsprecher ? .speaker : .none)
+            audioStarten()
+            freizeichenStarten()                 // »tuut … tuut« schon beim Wählen, bis sie wirklich dran ist
+        }
         UIDevice.current.isProximityMonitoringEnabled = !lautsprecher
         verbinden()
         NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -82,6 +96,14 @@ final class Telefon {
 
     @MainActor
     func auflegen() { beenden() }
+
+    /// CallKit hat die Audio-Sitzung aktiviert → jetzt Mikrofon und Stimme starten.
+    @MainActor
+    func callKitAudioBereit() {
+        guard perCallKit, !audioLaeuft, zustand != .beendet else { return }
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(lautsprecher ? .speaker : .none)
+        audioStarten()
+    }
 
     @MainActor
     func stummSchalten() { setzeStumm(!stumm) }
@@ -130,7 +152,11 @@ final class Telefon {
         freizeichenStoppen()
         audioStoppen()
         UIDevice.current.isProximityMonitoringEnabled = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if perCallKit {
+            Rufe.shared.beendet()              // CallKit beendet den System-Anruf und gibt die Audio-Sitzung frei
+        } else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     // MARK: Verbindung
